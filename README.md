@@ -1,10 +1,3 @@
 'tgsimdb' is an acronym that stands for Telegram Simulation Database. Telegram Simulations (or "SIMs" for short) are text-based turn-based strategy RP games where you take control of an historical nation or state in a given time period, interacting and competing with other players for global domination. Like any other RP game each player starts with a "File" in which they can find all the relevant data that they need in order to play. As the game progresses and players make their moves, that data needs to be constantly updated and player files need to be rewritten each week. That work is usually done manually by the admins/masters of the RPs with the use of text files or excel spreadsheets. This project aims at creating a universal database made with the use of Python and SQLite to manage and automatically update, print and share player files.
 
 This project is in the earliest stages of development. Current version is v.0.1.0. with a basic database generator and the importer logic to upload data written in CVS files.
-Current roadmap:
-✅  0.1.0	Core DB + importer
-    0.2.0	Provinces extended (terrain, culture, religion)
-    0.3.0	Basic calculations (population sums, country stats)
-    0.4.0	Turn processor
-    0.5.0	Savegame system
-    0.9.0	Feature complete alpha
