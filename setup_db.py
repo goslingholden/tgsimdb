@@ -1,36 +1,55 @@
-#This script sets up the database and its tables for all the relevant data addressed by the game logic.
-
 from db_utils import get_connection
+
 conn = get_connection()
 cursor = conn.cursor()
 
+# Enforce foreign keys
+conn.execute("PRAGMA foreign_keys = ON;")
+
+# -------------------- COUNTRIES --------------------
 print("Building nations...")
-cursor.execute("""CREATE TABLE countries (
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS countries (
     code TEXT PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL
+    name TEXT UNIQUE NOT NULL,
+    culture TEXT NOT NULL DEFAULT 'Unknown',
+    religion TEXT NOT NULL DEFAULT 'Unknown',
+    unrest INTEGER NOT NULL DEFAULT 0
 );
 """)
 print("Nation-building completed.")
 
+# -------------------- PROVINCES --------------------
 print("Creating provinces table...")
-cursor.execute("""CREATE TABLE IF NOT EXISTS provinces (
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS provinces (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
     population INTEGER NOT NULL,
     owner_country_code TEXT,
+    rank TEXT NOT NULL DEFAULT 'settlement',
+    religion TEXT NOT NULL DEFAULT 'Unknown',
+    culture TEXT NOT NULL DEFAULT 'Unknown',
+    terrain TEXT NOT NULL DEFAULT 'plains',
     FOREIGN KEY (owner_country_code) REFERENCES countries(code)
 );
 """)
 print("Provinces table created successfully.")
 
+# -------------------- STATES --------------------
 print("Creating the states table...")
-cursor.execute("""CREATE TABLE IF NOT EXISTS states (
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS states (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL
+    name TEXT UNIQUE NOT NULL,
+    food INTEGER NOT NULL DEFAULT 0,
+    stability INTEGER NOT NULL DEFAULT 50,
+    loyalty INTEGER NOT NULL DEFAULT 50
 );
 """)
 print("States table created successfully.")
 
+# -------------------- STATE-PROVINCE LINK --------------------
 print("Creating state_provinces table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS state_provinces (
@@ -42,6 +61,7 @@ CREATE TABLE IF NOT EXISTS state_provinces (
 );
 """)
 print("State_provinces table created successfully.")
+
 print("✅ All tables have been created")
 
 conn.commit()

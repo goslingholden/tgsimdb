@@ -1,110 +1,79 @@
-#This script imports the game data stored on CSV files on the database. The provided CSV files in the data folder have all the seeds.
-
 import sqlite3
 import csv
+from db_utils import get_connection
 
 DB = "tgsim.db"
 
-# ------------------------
-# Utility
-# ------------------------
-
-def clean(value):
-    """Strip whitespace and handle empty strings."""
-    if value is None:
-        return None
-    value = value.strip()
-    return value if value != "" else None
-
-# ------------------------
-# Import Functions
-# ------------------------
-
+# -------------------- COUNTRIES --------------------
 def import_countries(cursor):
-    print("Importing countries...")
     with open("data/countries.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            code = clean(row["code"])
-            name = clean(row["name"])
             cursor.execute("""
-                INSERT OR IGNORE INTO countries (code, name)
-                VALUES (?, ?)
-            """, (code, name))
+                INSERT OR IGNORE INTO countries (code, name, culture, religion, unrest)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                row["code"],
+                row["name"],
+                row.get("culture", "Unknown"),
+                row.get("religion", "Unknown"),
+                int(row.get("unrest", 0))
+            ))
 
+# -------------------- STATES --------------------
 def import_states(cursor):
-    print("Importing states...")
     with open("data/states.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            name = clean(row["name"])
             cursor.execute("""
-                INSERT OR IGNORE INTO states (name)
-                VALUES (?)
-            """, (name,))
+                INSERT OR IGNORE INTO states (name, food, stability, loyalty)
+                VALUES (?, ?, ?, ?)
+            """, (
+                row["name"],
+                int(row.get("food", 0)),
+                int(row.get("stability", 50)),
+                int(row.get("loyalty", 50))
+            ))
 
+# -------------------- PROVINCES --------------------
 def import_provinces(cursor):
-    print("Importing provinces...")
     with open("data/provinces.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            name = clean(row["name"])
-            owner = clean(row.get("owner_country_code"))
-
-            # Convert population safely
-            try:
-                population = int(row["population"])
-            except ValueError:
-                print(f"❌ Invalid population for province {name}: {row['population']}")
-                continue
-
             cursor.execute("""
-                INSERT INTO provinces (name, population, owner_country_code)
-                VALUES (?, ?, ?)
-                ON CONFLICT(name) DO UPDATE SET
-                    population = excluded.population,
-                    owner_country_code = excluded.owner_country_code;
-            """, (name, population, owner))
+                INSERT OR IGNORE INTO provinces (
+                    name, population, owner_country_code,
+                    rank, religion, culture, terrain
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                row["name"],
+                int(row["population"]),
+                row.get("owner_country_code"),
+                row.get("rank", "settlement"),
+                row.get("religion", "Unknown"),
+                row.get("culture", "Unknown"),
+                row.get("terrain", "plains")
+            ))
 
+# -------------------- STATE ↔ PROVINCE LINKS --------------------
 def import_state_links(cursor):
-    print("Importing state-province links...")
     with open("data/state_provinces.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            state_name = clean(row["state_name"])
-            province_name = clean(row["province_name"])
-
-            # Lookup state ID
-            cursor.execute("SELECT id FROM states WHERE name = ?", (state_name,))
-            state = cursor.fetchone()
-
-            # Lookup province ID
-            cursor.execute("SELECT id FROM provinces WHERE name = ?", (province_name,))
-            province = cursor.fetchone()
-
-            if not state:
-                print(f"❌ Missing state: {state_name}")
-                continue
-            if not province:
-                print(f"❌ Missing province: {province_name}")
-                continue
-
             cursor.execute("""
                 INSERT OR IGNORE INTO state_provinces (state_id, province_id)
-                VALUES (?, ?)
-            """, (state[0], province[0]))
+                VALUES (
+                    (SELECT id FROM states WHERE name = ?),
+                    (SELECT id FROM provinces WHERE name = ?)
+                )
+            """, (row["state_name"], row["province_name"]))
 
-# ------------------------
-# Main
-# ------------------------
-
+# -------------------- MAIN --------------------
 def main():
-    conn = sqlite3.connect(DB)
+    conn = get_connection()
     conn.execute("PRAGMA foreign_keys = ON;")
     cursor = conn.cursor()
-
-    print("Beginning import transaction...")
-    conn.execute("BEGIN TRANSACTION;")
 
     import_countries(cursor)
     import_states(cursor)
@@ -113,7 +82,7 @@ def main():
 
     conn.commit()
     conn.close()
-    print("✅ World data imported successfully.")
+    print("🌍 World data imported successfully.")
 
 if __name__ == "__main__":
     main()
