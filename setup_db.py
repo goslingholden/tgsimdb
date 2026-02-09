@@ -62,6 +62,51 @@ CREATE TABLE IF NOT EXISTS state_provinces (
 """)
 print("State_provinces table created successfully.")
 
+# ==========================================================
+# ===================== ECONOMY SYSTEM ======================
+# ==========================================================
+
+# -------------------- BUILDING TYPES --------------------
+print("Creating building_types table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS building_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    base_cost INTEGER NOT NULL,
+    base_tax_income INTEGER NOT NULL DEFAULT 0,
+    base_production INTEGER NOT NULL DEFAULT 0,
+    description TEXT
+);
+""")
+print("Building types table created successfully.")
+
+# -------------------- STATE BUILDINGS --------------------
+print("Creating state_buildings table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS state_buildings (
+    state_id INTEGER,
+    building_type_id INTEGER,
+    level INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (state_id, building_type_id),
+    FOREIGN KEY (state_id) REFERENCES states(id),
+    FOREIGN KEY (building_type_id) REFERENCES building_types(id)
+);
+""")
+print("State buildings table created successfully.")
+
+# -------------------- COUNTRY ECONOMY --------------------
+print("Creating country_economy table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS country_economy (
+    country_code TEXT PRIMARY KEY,
+    treasury INTEGER NOT NULL DEFAULT 0,
+    tax_rate REAL NOT NULL DEFAULT 0.1,
+    administration_cost INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (country_code) REFERENCES countries(code)
+);
+""")
+print("Country economy table created successfully.")
+
 print("✅ All tables have been created")
 
 conn.commit()

@@ -2,7 +2,7 @@
 
 import sqlite3
 
-DB_FILE = "tgsim.db"
+DB_FILE = "world.db"
 
 def get_connection():
     conn = sqlite3.connect(DB_FILE)
