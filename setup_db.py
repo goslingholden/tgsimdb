@@ -80,19 +80,19 @@ CREATE TABLE IF NOT EXISTS building_types (
 """)
 print("Building types table created successfully.")
 
-# -------------------- STATE BUILDINGS --------------------
-print("Creating state_buildings table...")
+# -------------------- PROVINCE BUILDINGS --------------------
+print("Creating province_buildings table...")
 cursor.execute("""
-CREATE TABLE IF NOT EXISTS state_buildings (
-    state_id INTEGER,
+CREATE TABLE IF NOT EXISTS province_buildings (
+    province_id INTEGER,
     building_type_id INTEGER,
-    level INTEGER NOT NULL DEFAULT 1,
-    PRIMARY KEY (state_id, building_type_id),
-    FOREIGN KEY (state_id) REFERENCES states(id),
+    amount INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (province_id, building_type_id),
+    FOREIGN KEY (province_id) REFERENCES provinces(id),
     FOREIGN KEY (building_type_id) REFERENCES building_types(id)
 );
 """)
-print("State buildings table created successfully.")
+print("Province buildings table created successfully.")
 
 # -------------------- COUNTRY ECONOMY --------------------
 print("Creating country_economy table...")

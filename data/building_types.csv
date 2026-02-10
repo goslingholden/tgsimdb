@@ -1,0 +1,4 @@
+name,base_cost,base_tax_income,base_production,description
+Fattoria,100,2,5,Produzione
+Mercato,300,30,0,Commercio
+Officina,500,0,50,Produzione
