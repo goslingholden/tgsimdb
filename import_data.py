@@ -124,11 +124,66 @@ def import_country_economy(cursor):
                     float(row.get("tax_rate", 0) or 0)
                 ))
 
+# ------------ UNIT TYPES -----------------
+def import_unit_types(cursor):
+    with open("data/unit_types.csv", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            cursor.execute("""
+                INSERT OR IGNORE INTO unit_types (
+                    name, recruitment_cost, upkeep_cost, attack, defense
+                )
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                row["name"],
+                int(row.get("recruitment_cost", 0) or 0),
+                int(row.get("upkeep_cost", 0) or 0),
+                int(row.get("attack", 0) or 0),
+                int(row.get("defense", 0) or 0)
+            ))
+
+# ------------ COUNTRY UNITS -----------------
+def import_country_units(cursor):
+    with open("data/country_units.csv", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            country = row["country_code"]
+            unit = row["unit_type"]
+            amount = int(row.get("amount", 0) or 0)
+
+            cursor.execute("SELECT id FROM unit_types WHERE name = ?", (unit,))
+            unit_id = cursor.fetchone()
+            if not unit_id:
+                print(f"⚠ Unit type not found: {unit}")
+                continue
+
+            cursor.execute("""
+                INSERT OR REPLACE INTO country_units (country_code, unit_type_id, amount)
+                VALUES (?, ?, ?)
+            """, (country, unit_id[0], amount))
+
+# ------------ COUNTRY MILITARY STATS -----------------
+def import_country_military(cursor):
+    with open("data/country_military.csv", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            cursor.execute("""
+                INSERT OR IGNORE INTO country_military (
+                    country_code, morale, discipline
+                )
+                VALUES (?, ?, ?)
+            """, (
+                row["country_code"],
+                float(row.get("morale", 1.0) or 1.0),
+                float(row.get("discipline", 1.0) or 1.0)
+            ))
+
 # -------------------- MAIN --------------------
 def main():
     conn = get_connection()
     conn.execute("PRAGMA foreign_keys = ON;")
     cursor = conn.cursor()
+
     import_countries(cursor)
     import_states(cursor)
     import_provinces(cursor)
@@ -136,6 +191,10 @@ def main():
     import_building_types(cursor)
     import_province_buildings(cursor)
     import_country_economy(cursor)
+    import_unit_types(cursor)
+    import_country_military(cursor)
+    import_country_units(cursor)
+
     conn.commit()
     conn.close()
     print("🌍 World data imported successfully.")

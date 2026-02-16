@@ -1,7 +1,0 @@
-{
-  "economy": {
-    "base_tax_per_pop": 0.01,
-    "admin_cost_per_province": 5,
-    "military_upkeep_per_pop": 0.002
-  }
-}

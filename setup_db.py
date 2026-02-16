@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS state_provinces (
 print("State_provinces table created successfully.")
 
 # ==========================================================
-# ===================== ECONOMY SYSTEM ======================
+# ===================== ECONOMY SYSTEM =====================
 # ==========================================================
 
 # -------------------- BUILDING TYPES --------------------
@@ -130,6 +130,54 @@ CREATE TABLE IF NOT EXISTS country_economy (
 );
 """)
 print("Country economy table created successfully.")
+
+# ==========================================================
+# ==================== MILITARY SYSTEM =====================
+# ==========================================================
+
+# --------------------- UNIT TYPES -------------------------
+print("Creating unit_types table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS unit_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    recruitment_cost INTEGER NOT NULL,
+    upkeep_cost INTEGER NOT NULL,
+    attack INTEGER NOT NULL,
+    defense INTEGER NOT NULL
+);
+""")
+print("Unit types table created successfully.")
+
+# -------------------- COUNTRY UNITS ------------------------
+print("Creating country_units table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS country_units (
+    country_code TEXT,
+    unit_type_id INTEGER,
+    amount INTEGER NOT NULL DEFAULT 0,
+
+    PRIMARY KEY (country_code, unit_type_id),
+    FOREIGN KEY (country_code) REFERENCES countries(code),
+    FOREIGN KEY (unit_type_id) REFERENCES unit_types(id)
+);
+""")
+print("Country units table created successfully.")
+
+# ------------------- COUNTRY MILITARY ----------------------
+print("Creating country_military table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS country_military (
+    country_code TEXT PRIMARY KEY,
+    discipline REAL NOT NULL DEFAULT 1.0,
+    morale REAL NOT NULL DEFAULT 1.0,
+    unit_limit INTEGER NOT NULL DEFAULT 0,
+    total_upkeep INTEGER NOT NULL DEFAULT 0,
+
+    FOREIGN KEY (country_code) REFERENCES countries(code)
+);
+""")
+print("Country military table created successfully.")
 
 print("✅ All tables have been created")
 
