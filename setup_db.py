@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS building_types (
     base_cost INTEGER NOT NULL,
     base_tax_income INTEGER NOT NULL DEFAULT 0,
     base_production INTEGER NOT NULL DEFAULT 0,
+    base_upkeep INTEGER NOT NULL DEFAULT 0,
     description TEXT
 );
 """)
@@ -101,7 +102,30 @@ CREATE TABLE IF NOT EXISTS country_economy (
     country_code TEXT PRIMARY KEY,
     treasury INTEGER NOT NULL DEFAULT 0,
     tax_rate REAL NOT NULL DEFAULT 0.1,
+
+    -- Income
+    tax_income INTEGER NOT NULL DEFAULT 0,
+    building_income INTEGER NOT NULL DEFAULT 0,
+    total_income INTEGER NOT NULL DEFAULT 0,
+
+    -- Expenses
     administration_cost INTEGER NOT NULL DEFAULT 0,
+    building_upkeep INTEGER NOT NULL DEFAULT 0,
+    military_upkeep INTEGER NOT NULL DEFAULT 0,
+    total_expenses INTEGER NOT NULL DEFAULT 0,
+
+    -- Modifiers
+    tax_efficiency REAL NOT NULL DEFAULT 1.0,
+    corruption REAL NOT NULL DEFAULT 0.0,
+    economic_growth REAL NOT NULL DEFAULT 0.0,
+
+    -- Snapshot data
+    total_population INTEGER NOT NULL DEFAULT 0,
+
+    -- Crisis flags
+    at_war INTEGER NOT NULL DEFAULT 0,
+    war_exhaustion INTEGER NOT NULL DEFAULT 0,
+
     FOREIGN KEY (country_code) REFERENCES countries(code)
 );
 """)

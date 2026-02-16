@@ -1,7 +1,6 @@
 import sqlite3
 import csv
 from db_utils import get_connection
-DB = "tgsim.db"
 
 # -------------------- COUNTRIES --------------------
 def import_countries(cursor):
@@ -75,13 +74,14 @@ def import_building_types(cursor):
         for row in reader:
             cursor.execute("""
                 INSERT OR IGNORE INTO building_types 
-                (name, base_cost, base_tax_income, base_production, description)
-                VALUES (?, ?, ?, ?, ?)
+                (name, base_cost, base_tax_income, base_production, base_upkeep, description)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 row["name"],
                 int(row.get("base_cost", 0) or 0),
                 int(row.get("base_tax_income", 0) or 0),
                 int(row.get("base_production", 0) or 0),
+                int(row.get("base_upkeep", 0) or 0),
                 row.get("description", "")
             ))
 
@@ -108,6 +108,22 @@ def import_province_buildings(cursor):
                 VALUES (?, ?, ?)
             """, (province_id[0], building_id[0], amount))
 
+# ------------ COUNTRY ECONOMY -----------------
+def import_country_economy(cursor):
+    with open("data/country_economy.csv", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            cursor.execute("""
+                INSERT OR IGNORE INTO country_economy (
+                    country_code, treasury, tax_rate
+                )
+                VALUES (?, ?, ?)
+                """, (
+                    row["country_code"],
+                    int(row.get("treasury", 0) or 0),
+                    float(row.get("tax_rate", 0) or 0)
+                ))
+
 # -------------------- MAIN --------------------
 def main():
     conn = get_connection()
@@ -119,6 +135,7 @@ def main():
     import_state_links(cursor)
     import_building_types(cursor)
     import_province_buildings(cursor)
+    import_country_economy(cursor)
     conn.commit()
     conn.close()
     print("🌍 World data imported successfully.")
