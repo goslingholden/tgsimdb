@@ -1,4 +1,8 @@
-name,base_cost,base_tax_income,base_production,base_upkeep,description
-Fattoria,100,2,5,5,Produzione
-Mercato,300,30,0,15,Commercio
-Officina,500,0,50,25,Produzione
+name,building_type,base_cost,base_tax_income,base_production,base_upkeep,description
+Fattoria,farm,100,10,10,5,Produzione
+Mercato,market,300,30,0,15,Commercio
+Officina,workshop,500,0,50,25,Produzione
+Falegnameria,lumber_mill,200,15,15,10,Produzione
+Caserma,barracks,500,0,0,50,Amministrazione
+Municipio,town_hall,600,10,0,30,Amministrazione
+Tempio,temple,150,15,0,5,Amministrazione

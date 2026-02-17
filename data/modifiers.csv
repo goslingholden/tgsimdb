@@ -1,0 +1,8 @@
+modifier_key,description,default_value
+tax_efficiency,Tax income multiplier,0
+production_efficiency,Province production multiplier,0
+military_unit_limit_mult,Military unit cap multiplier,0
+admin_efficiency,Administration cost reduction,0
+morale,Mil bonus,0
+discipline,Mil bonus,0
+corruption_reduction,corruption reduction,0

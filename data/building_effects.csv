@@ -1,0 +1,5 @@
+building_type,scope,modifier_key,value
+lumber_mill,province,production_efficiency,0.1
+barracks,country,military_unit_limit_mult,0.05
+town_hall,country,admin_efficiency,0.05
+temple,province,tax_efficiency,0.03

@@ -72,6 +72,7 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS building_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
+    building_type TEXT UNIQUE NOT NULL,
     base_cost INTEGER NOT NULL,
     base_tax_income INTEGER NOT NULL DEFAULT 0,
     base_production INTEGER NOT NULL DEFAULT 0,
@@ -164,20 +165,78 @@ CREATE TABLE IF NOT EXISTS country_units (
 """)
 print("Country units table created successfully.")
 
-# ------------------- COUNTRY MILITARY ----------------------
-print("Creating country_military table...")
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS country_military (
-    country_code TEXT PRIMARY KEY,
-    discipline REAL NOT NULL DEFAULT 1.0,
-    morale REAL NOT NULL DEFAULT 1.0,
-    unit_limit INTEGER NOT NULL DEFAULT 0,
-    total_upkeep INTEGER NOT NULL DEFAULT 0,
+# ==========================================================
+# ======================= MODIFIERS ========================
+# ==========================================================
 
-    FOREIGN KEY (country_code) REFERENCES countries(code)
+# ------------------- MASTER MODIFIER ----------------------
+print("Creating master modifier table...")
+cursor.execute("""
+CREATE TABLE modifiers (
+    modifier_key TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    default_value REAL DEFAULT 0
 );
 """)
-print("Country military table created successfully.")
+print("Master modifiers table created successfully.")
+
+# ------------------- BUILDING EFFECTS ---------------------
+print("Creating building effects table...")
+cursor.execute("""
+CREATE TABLE building_effects (
+    building_type TEXT,
+    scope TEXT CHECK(scope IN ('province','country')),
+    modifier_key TEXT,
+    value REAL,
+    PRIMARY KEY (building_type, scope, modifier_key),
+    FOREIGN KEY (building_type) REFERENCES building_types(building_type),
+    FOREIGN KEY (modifier_key) REFERENCES modifiers(modifier_key)
+);
+""")
+print("Building effects table created successfully.")
+
+# ------------------- COUNTRY MODIFIERS ---------------------
+print("Creating country modifiers table...")
+cursor.execute("""
+CREATE TABLE country_modifiers (
+    country_code TEXT,
+    modifier_key TEXT,
+    value REAL DEFAULT 0,
+    PRIMARY KEY (country_code, modifier_key),
+    FOREIGN KEY (country_code) REFERENCES countries(code),
+    FOREIGN KEY (modifier_key) REFERENCES modifiers(modifier_key)
+);
+""")
+print("Country modifiers table created successfully.")
+
+# ------------------- PROVINCE MODIFIERS --------------------
+print("Creating province modifiers table...")
+cursor.execute("""
+CREATE TABLE province_modifiers (
+    province_id INTEGER,
+    modifier_key TEXT,
+    value REAL DEFAULT 0,
+    PRIMARY KEY (province_id, modifier_key),
+    FOREIGN KEY (province_id) REFERENCES provinces(id),
+    FOREIGN KEY (modifier_key) REFERENCES modifiers(modifier_key)
+);
+""")
+print("Province modifiers table created successfully.")
+
+# ------------------- MODIFIER SOURCES ----------------------
+print("Creating modifier sources table...")
+cursor.execute("""
+CREATE TABLE modifier_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope TEXT CHECK(scope IN ('province','country')),
+    scope_id TEXT,
+    modifier_key TEXT,
+    value REAL,
+    source_type TEXT,
+    source_id TEXT
+);
+""")
+print("Modifiers source table created successfully.")
 
 print("✅ All tables have been created")
 

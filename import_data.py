@@ -74,10 +74,11 @@ def import_building_types(cursor):
         for row in reader:
             cursor.execute("""
                 INSERT OR IGNORE INTO building_types 
-                (name, base_cost, base_tax_income, base_production, base_upkeep, description)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (name, building_type, base_cost, base_tax_income, base_production, base_upkeep, description)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 row["name"],
+                row.get("building_type", ""),
                 int(row.get("base_cost", 0) or 0),
                 int(row.get("base_tax_income", 0) or 0),
                 int(row.get("base_production", 0) or 0),
@@ -162,21 +163,54 @@ def import_country_units(cursor):
                 VALUES (?, ?, ?)
             """, (country, unit_id[0], amount))
 
-# ------------ COUNTRY MILITARY STATS -----------------
-def import_country_military(cursor):
-    with open("data/country_military.csv", newline="", encoding="utf-8") as f:
+# --------------- MODIFIERS -----------------
+def import_modifiers(cursor):
+    with open("data/modifiers.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
-                INSERT OR IGNORE INTO country_military (
-                    country_code, morale, discipline
+                INSERT OR IGNORE INTO modifiers (
+                    modifier_key, description, default_value
                 )
                 VALUES (?, ?, ?)
             """, (
-                row["country_code"],
-                float(row.get("morale", 1.0) or 1.0),
-                float(row.get("discipline", 1.0) or 1.0)
+                row["modifier_key"],
+                row.get("description", ""),
+                float(row.get("default_value", 1.0) or 1.0)
             ))
+
+# --------------- BUILDING EFFECTS -----------------
+def import_building_effects(cursor):
+    with open("data/building_effects.csv", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            cursor.execute("""
+                INSERT OR IGNORE INTO building_effects (
+                    building_type, scope, modifier_key, value
+                )
+                VALUES (?, ?, ?, ?)
+            """, (
+                row["building_type"],
+                row.get("scope", ""),
+                row.get("modifier_key", ""),
+                float(row.get("value", 1.0) or 1.0)
+            ))
+
+# --------------- COUNTRY MODIFIERS -----------------
+def import_country_modifiers(cursor):
+    with open("data/country_modifiers.csv", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            cursor.execute("""
+                INSERT OR IGNORE INTO country_modifiers (
+                    country_code, modifier_key, value
+                )
+                VALUES (?, ?, ?)
+                """, (
+                    row["country_code"],
+                    row.get("modifier_key", ""),
+                    float(row.get("value", 1.0) or 1.0)
+                ))
 
 # -------------------- MAIN --------------------
 def main():
@@ -191,9 +225,13 @@ def main():
     import_building_types(cursor)
     import_province_buildings(cursor)
     import_country_economy(cursor)
+    # Military
     import_unit_types(cursor)
-    import_country_military(cursor)
     import_country_units(cursor)
+    # Modifiers
+    import_modifiers(cursor)
+    import_building_effects(cursor)
+    import_country_modifiers(cursor)
 
     conn.commit()
     conn.close()
