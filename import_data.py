@@ -38,12 +38,21 @@ def import_provinces(cursor):
     with open("data/provinces.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
+
+            resource_name = row.get("resource")
+            resource_id = None
+            if resource_name:
+                cursor.execute("SELECT id FROM resources WHERE name = ?", (resource_name,))
+                res = cursor.fetchone()
+                if res:
+                    resource_id = res[0]
+
             cursor.execute("""
                 INSERT OR IGNORE INTO provinces (
                     name, population, owner_country_code,
-                    rank, religion, culture, terrain
+                    rank, religion, culture, terrain, resource_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 row["name"],
                 int(row["population"]),
@@ -51,7 +60,8 @@ def import_provinces(cursor):
                 row.get("rank", "settlement"),
                 row.get("religion", "Unknown"),
                 row.get("culture", "Unknown"),
-                row.get("terrain", "plains")
+                row.get("terrain", "plains"),
+                resource_id
             ))
 
 # -------------------- STATE ↔ PROVINCE LINKS --------------------
@@ -212,6 +222,19 @@ def import_country_modifiers(cursor):
                     float(row.get("value", 1.0) or 1.0)
                 ))
 
+# -------------------- RESOURCES --------------------
+def import_resources(cursor):
+    with open("data/resources.csv", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            cursor.execute("""
+                INSERT OR IGNORE INTO resources (name, description)
+                VALUES (?, ?)
+            """, (
+                row["name"],
+                row.get("description", "")
+            ))
+
 # -------------------- MAIN --------------------
 def main():
     conn = get_connection()
@@ -220,15 +243,14 @@ def main():
 
     import_countries(cursor)
     import_states(cursor)
+    import_resources(cursor)
     import_provinces(cursor)
     import_state_links(cursor)
     import_building_types(cursor)
     import_province_buildings(cursor)
     import_country_economy(cursor)
-    # Military
     import_unit_types(cursor)
     import_country_units(cursor)
-    # Modifiers
     import_modifiers(cursor)
     import_building_effects(cursor)
     import_country_modifiers(cursor)

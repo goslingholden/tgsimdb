@@ -6,6 +6,10 @@ cursor = conn.cursor()
 # Enforce foreign keys
 conn.execute("PRAGMA foreign_keys = ON;")
 
+# ==========================================================
+# ======================= GEOGRAPHY ========================
+# ==========================================================
+
 # -------------------- COUNTRIES --------------------
 print("Building nations...")
 cursor.execute("""
@@ -31,7 +35,9 @@ CREATE TABLE IF NOT EXISTS provinces (
     religion TEXT NOT NULL DEFAULT 'Unknown',
     culture TEXT NOT NULL DEFAULT 'Unknown',
     terrain TEXT NOT NULL DEFAULT 'plains',
-    FOREIGN KEY (owner_country_code) REFERENCES countries(code)
+    resource_id INTEGER,
+    FOREIGN KEY (owner_country_code) REFERENCES countries(code),
+    FOREIGN KEY (resource_id) REFERENCES resources(id)
 );
 """)
 print("Provinces table created successfully.")
@@ -237,6 +243,36 @@ CREATE TABLE modifier_sources (
 );
 """)
 print("Modifiers source table created successfully.")
+
+# ==========================================================
+# ======================= RESOURCES ========================
+# ==========================================================
+
+# ----------------------- RESOURCES ------------------------
+print("Creating resources table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS resources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT,
+    base_price INTEGER DEFAULT 1
+);
+""")
+print("Resources table created successfully.")
+
+# ------------------- COUNTRY RESOURCES ---------------------
+print("Creating country_resources table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS country_resources (
+    country_code TEXT NOT NULL,
+    resource_id INTEGER NOT NULL,
+    stockpile INTEGER DEFAULT 0,
+    PRIMARY KEY (country_code, resource_id),
+    FOREIGN KEY (country_code) REFERENCES countries(code),
+    FOREIGN KEY (resource_id) REFERENCES resources(id)
+);
+""")
+print("Country resources table created successfully.")
 
 print("✅ All tables have been created")
 

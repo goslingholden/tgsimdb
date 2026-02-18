@@ -7,6 +7,10 @@ config.read("config.ini")
 
 BASE_TAX_PER_POP = float(config["economy"]["base_tax_per_pop"])
 ADMIN_COST_PER_PROVINCE = float(config["economy"]["admin_cost_per_province"])
+
+RESOURCE_PRODUCTION = int(config["resources"]["resource_production"])
+RESOURCE_CAP_PER_PROVINCE = int(config["resources"]["resource_cap_per_province"])
+
 POP_PER_UNIT = int(config["military"]["pop_per_unit"])
 BASE_UNIT_RATIO = float(config["military"]["base_unit_ratio"])
 
@@ -19,7 +23,8 @@ def validate_schema(cursor):
     required_tables = [
         "countries", "provinces", "country_economy",
         "building_types", "province_buildings", "building_effects",
-        "country_modifiers", "unit_types", "country_units"
+        "country_modifiers", "unit_types", "country_units",
+        "resources", "country_resources"
     ]
 
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -30,7 +35,6 @@ def validate_schema(cursor):
         print("❌ MISSING TABLES:", missing)
         exit(1)
 
-    # Validate columns
     cursor.execute("PRAGMA table_info(building_effects)")
     cols = {c[1] for c in cursor.fetchall()}
     if "building_type_id" not in cols:
@@ -103,10 +107,6 @@ def get_total_units(cursor, country):
 # ================== BUILDING ECONOMY ==================
 
 def get_building_economy(cursor, country):
-    """
-    Returns (total_income, total_upkeep) from raw building_types values
-    """
-
     cursor.execute("""
         SELECT 
             COALESCE(SUM(bt.base_tax_income * pb.amount), 0),
@@ -121,6 +121,36 @@ def get_building_economy(cursor, country):
     return income or 0, upkeep or 0
 
 
+# ================= RESOURCE SYSTEM =================
+
+def get_resource_names(cursor):
+    cursor.execute("SELECT id, name FROM resources")
+    return {rid: name for rid, name in cursor.fetchall()}
+
+
+def get_resource_production(cursor, country):
+    cursor.execute("""
+        SELECT resource_id, COUNT(*) 
+        FROM provinces
+        WHERE owner_country_code = ?
+        AND resource_id IS NOT NULL
+        GROUP BY resource_id
+    """, (country,))
+
+    return {rid: count * RESOURCE_PRODUCTION for rid, count in cursor.fetchall()}
+
+
+def get_country_stockpile(cursor, country):
+    cursor.execute("""
+        SELECT r.name, cr.stockpile
+        FROM country_resources cr
+        JOIN resources r ON cr.resource_id = r.id
+        WHERE cr.country_code = ?
+        ORDER BY r.name
+    """, (country,))
+    return cursor.fetchall()
+
+
 # ================== ECONOMY TICK ==================
 
 def economy_tick():
@@ -132,6 +162,8 @@ def economy_tick():
 
     cursor.execute("SELECT code FROM countries")
     countries = [c[0] for c in cursor.fetchall()]
+
+    resource_names = get_resource_names(cursor)
 
     print("\n=== ECONOMY TICK START ===")
 
@@ -186,6 +218,35 @@ def economy_tick():
         unit_limit = int((population * BASE_UNIT_RATIO * unit_limit_mod) / POP_PER_UNIT + 5)
         total_units = get_total_units(cursor, country)
 
+        # ----- RESOURCES -----
+        production = get_resource_production(cursor, country)
+        resource_cap = provinces * RESOURCE_CAP_PER_PROVINCE
+
+        # Add production to stockpile
+        for rid, amount in production.items():
+            cursor.execute("""
+                INSERT INTO country_resources (country_code, resource_id, stockpile)
+                VALUES (?, ?, ?)
+                ON CONFLICT(country_code, resource_id)
+                DO UPDATE SET stockpile = stockpile + ?
+            """, (country, rid, amount, amount))
+
+        # Enforce total shared cap
+        cursor.execute("""
+            SELECT SUM(stockpile) FROM country_resources WHERE country_code = ?
+        """, (country,))
+        total_stockpile = cursor.fetchone()[0] or 0
+
+        if total_stockpile > resource_cap:
+            excess = total_stockpile - resource_cap
+            cursor.execute("""
+                UPDATE country_resources
+                SET stockpile = stockpile - (
+                    stockpile * 1.0 / (SELECT SUM(stockpile) FROM country_resources WHERE country_code = ?)
+                ) * ?
+                WHERE country_code = ?
+            """, (country, excess, country))
+
         # ----- TOTALS -----
         total_income = int(tax_income + building_income)
         total_expenses = int(administration_cost + military_upkeep + building_upkeep)
@@ -217,13 +278,27 @@ def economy_tick():
             country
         ))
 
-        # DEBUG REPORT
+        # ----- DEBUG OUTPUT -----
+        production_named = {resource_names.get(rid, f"ID_{rid}"): amt for rid, amt in production.items()}
+        stockpile = get_country_stockpile(cursor, country)
+        cursor.execute("SELECT SUM(stockpile) FROM country_resources WHERE country_code = ?", (country,))
+        total_stockpile = cursor.fetchone()[0] or 0
+
         print(f"\n{country}")
         print(f" Population: {population} | Provinces: {provinces}")
         print(f" Tax Eff x{tax_eff:.3f} | Admin Mod x{admin_mod:.3f}")
         print(f" Buildings Raw: Income {building_income_raw}, Upkeep {building_upkeep}")
-        print(f" Buildings Final Income (modded): {building_income}")
         print(f" Unit Limit: {total_units}/{unit_limit}")
+
+        print(f" Resource Cap: {resource_cap} | Total Stockpile: {int(total_stockpile)}")
+        print(" Resource Production This Turn:")
+        for name, amt in production_named.items():
+            print(f"   +{amt} {name}")
+
+        print(" Resource Stockpile:")
+        for name, amt in stockpile:
+            print(f"   {name}: {int(amt)}")
+
         print(f" Income: Tax {int(tax_income)} | Buildings {int(building_income)}")
         print(f" Expenses: Admin {int(administration_cost)} | Military {int(military_upkeep)} | Buildings {int(building_upkeep)}")
         print(f" Treasury: {treasury} → {new_treasury}")
