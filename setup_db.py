@@ -184,12 +184,12 @@ print("Master modifiers table created successfully.")
 print("Creating building effects table...")
 cursor.execute("""
 CREATE TABLE building_effects (
-    building_type TEXT,
+    building_type_id INTEGER,
     scope TEXT CHECK(scope IN ('province','country')),
     modifier_key TEXT,
     value REAL,
-    PRIMARY KEY (building_type, scope, modifier_key),
-    FOREIGN KEY (building_type) REFERENCES building_types(building_type),
+    PRIMARY KEY (building_type_id, scope, modifier_key),
+    FOREIGN KEY (building_type_id) REFERENCES building_types(id),
     FOREIGN KEY (modifier_key) REFERENCES modifiers(modifier_key)
 );
 """)
@@ -210,18 +210,18 @@ CREATE TABLE country_modifiers (
 print("Country modifiers table created successfully.")
 
 # ------------------- PROVINCE MODIFIERS --------------------
-print("Creating province modifiers table...")
-cursor.execute("""
-CREATE TABLE province_modifiers (
-    province_id INTEGER,
-    modifier_key TEXT,
-    value REAL DEFAULT 0,
-    PRIMARY KEY (province_id, modifier_key),
-    FOREIGN KEY (province_id) REFERENCES provinces(id),
-    FOREIGN KEY (modifier_key) REFERENCES modifiers(modifier_key)
-);
-""")
-print("Province modifiers table created successfully.")
+# print("Creating province modifiers table...")
+# cursor.execute("""
+# CREATE TABLE province_modifiers (
+#     province_id INTEGER,
+#     modifier_key TEXT,
+#     value REAL DEFAULT 0,
+#     PRIMARY KEY (province_id, modifier_key),
+#     FOREIGN KEY (province_id) REFERENCES provinces(id),
+#     FOREIGN KEY (modifier_key) REFERENCES modifiers(modifier_key)
+# );
+# """)
+# print("Province modifiers table created successfully.")
 
 # ------------------- MODIFIER SOURCES ----------------------
 print("Creating modifier sources table...")

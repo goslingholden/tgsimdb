@@ -186,11 +186,11 @@ def import_building_effects(cursor):
         for row in reader:
             cursor.execute("""
                 INSERT OR IGNORE INTO building_effects (
-                    building_type, scope, modifier_key, value
+                    building_type_id, scope, modifier_key, value
                 )
                 VALUES (?, ?, ?, ?)
             """, (
-                row["building_type"],
+                int(row["building_type_id"]),
                 row.get("scope", ""),
                 row.get("modifier_key", ""),
                 float(row.get("value", 1.0) or 1.0)

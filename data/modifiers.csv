@@ -1,8 +1,12 @@
 modifier_key,description,default_value
-tax_efficiency,Tax income multiplier,0
-production_efficiency,Province production multiplier,0
-military_unit_limit_mult,Military unit cap multiplier,0
-admin_efficiency,Administration cost reduction,0
-morale,Mil bonus,0
-discipline,Mil bonus,0
-corruption_reduction,corruption reduction,0
+tax_efficiency,Tax income multiplier,1
+production_efficiency,Province production multiplier,1
+military_unit_limit_mult,Military unit cap multiplier,1
+admin_efficiency,Administration cost reduction,1
+morale,Mil bonus,1
+discipline,Mil bonus,1
+corruption_reduction,corruption reduction,1
+pop_growth,Rate of pop growth per turn,1
+building_income_flat,Flat income from buildings,0
+building_income_mult,Multiplier on building income,1
+building_upkeep_flat,Flat upkeep from buildings,0
