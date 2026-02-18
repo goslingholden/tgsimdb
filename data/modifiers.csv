@@ -7,6 +7,3 @@ morale,Mil bonus,1
 discipline,Mil bonus,1
 corruption_reduction,corruption reduction,1
 pop_growth,Rate of pop growth per turn,1
-building_income_flat,Flat income from buildings,0
-building_income_mult,Multiplier on building income,1
-building_upkeep_flat,Flat upkeep from buildings,0

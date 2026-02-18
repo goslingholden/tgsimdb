@@ -1,10 +1,5 @@
 building_type_id,scope,modifier_key,value
-1,province,building_income_flat,20
-1,province,building_upkeep_flat,5
-4,province,building_income_flat,30
-4,province,building_upkeep_flat,10
 4,province,production_efficiency,0.1
 5,country,military_unit_limit_mult,0.05
-5,country,building_upkeep_flat,50
 6,country,admin_efficiency,0.05
 7,province,tax_efficiency,0.03

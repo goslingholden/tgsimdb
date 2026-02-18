@@ -102,28 +102,23 @@ def get_total_units(cursor, country):
 
 # ================== BUILDING ECONOMY ==================
 
-def get_building_income(cursor, country):
+def get_building_economy(cursor, country):
+    """
+    Returns (total_income, total_upkeep) from raw building_types values
+    """
+
     cursor.execute("""
-        SELECT COALESCE(SUM(be.value * pb.amount), 0)
+        SELECT 
+            COALESCE(SUM(bt.base_tax_income * pb.amount), 0),
+            COALESCE(SUM(bt.base_upkeep * pb.amount), 0)
         FROM province_buildings pb
-        JOIN building_effects be ON pb.building_type_id = be.building_type_id
+        JOIN building_types bt ON pb.building_type_id = bt.id
         JOIN provinces p ON pb.province_id = p.id
         WHERE p.owner_country_code = ?
-        AND be.modifier_key = 'building_income_flat'
     """, (country,))
-    return cursor.fetchone()[0] or 0.0
 
-
-def get_building_upkeep(cursor, country):
-    cursor.execute("""
-        SELECT COALESCE(SUM(be.value * pb.amount), 0)
-        FROM province_buildings pb
-        JOIN building_effects be ON pb.building_type_id = be.building_type_id
-        JOIN provinces p ON pb.province_id = p.id
-        WHERE p.owner_country_code = ?
-        AND be.modifier_key = 'building_upkeep_flat'
-    """, (country,))
-    return cursor.fetchone()[0] or 0.0
+    income, upkeep = cursor.fetchone()
+    return income or 0, upkeep or 0
 
 
 # ================== ECONOMY TICK ==================
@@ -184,9 +179,8 @@ def economy_tick():
         military_upkeep = base_upkeep * upkeep_mod
 
         # ----- BUILDINGS -----
-        building_income_flat = get_building_income(cursor, country)
-        building_upkeep = get_building_upkeep(cursor, country)
-        building_income = building_income_flat * building_income_mult
+        building_income_raw, building_upkeep = get_building_economy(cursor, country)
+        building_income = building_income_raw * building_income_mult
 
         # ----- UNIT LIMIT -----
         unit_limit = int((population * BASE_UNIT_RATIO * unit_limit_mod) / POP_PER_UNIT + 5)
@@ -227,7 +221,8 @@ def economy_tick():
         print(f"\n{country}")
         print(f" Population: {population} | Provinces: {provinces}")
         print(f" Tax Eff x{tax_eff:.3f} | Admin Mod x{admin_mod:.3f}")
-        print(f" Buildings: Income {building_income_flat} → {building_income}, Upkeep {building_upkeep}")
+        print(f" Buildings Raw: Income {building_income_raw}, Upkeep {building_upkeep}")
+        print(f" Buildings Final Income (modded): {building_income}")
         print(f" Unit Limit: {total_units}/{unit_limit}")
         print(f" Income: Tax {int(tax_income)} | Buildings {int(building_income)}")
         print(f" Expenses: Admin {int(administration_cost)} | Military {int(military_upkeep)} | Buildings {int(building_upkeep)}")
