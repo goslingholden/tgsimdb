@@ -274,6 +274,34 @@ CREATE TABLE IF NOT EXISTS country_resources (
 """)
 print("Country resources table created successfully.")
 
+# ==========================================================
+# ===================== PLAYER MOVES =======================
+# ==========================================================
+
+# --------------------- MOVES TABLE ------------------------
+print("Creating player_moves table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS player_moves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    turn INTEGER NOT NULL,
+    country_code TEXT NOT NULL,
+    move_type TEXT NOT NULL,              
+    target_province_id INTEGER,
+    target_building_type_id INTEGER,
+    target_unit_type_id INTEGER,
+    amount INTEGER DEFAULT 1,
+    notes TEXT,
+    processed BOOLEAN DEFAULT 0,
+    error_message TEXT,
+
+    FOREIGN KEY (country_code) REFERENCES countries(code),
+    FOREIGN KEY (target_province_id) REFERENCES provinces(id),
+    FOREIGN KEY (target_building_type_id) REFERENCES building_types(id),
+    FOREIGN KEY (target_unit_type_id) REFERENCES unit_types(id)
+);
+""")
+print("Player moves table created successfully.")
+
 print("✅ All tables have been created")
 
 conn.commit()

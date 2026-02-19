@@ -1,0 +1,3 @@
+country_code,move_type,province_id,building_type_id,unit_type_id,amount,notes
+CAR,build,1,1,,1,Fattoria a Trapani
+MAG,recruit,,,1,1,Fanteria
