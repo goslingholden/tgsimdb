@@ -230,22 +230,23 @@ def economy_tick():
                 ON CONFLICT(country_code, resource_id)
                 DO UPDATE SET stockpile = stockpile + ?
             """, (country, rid, amount, amount))
-
-        # Enforce total shared cap
         cursor.execute("""
             SELECT SUM(stockpile) FROM country_resources WHERE country_code = ?
         """, (country,))
         total_stockpile = cursor.fetchone()[0] or 0
 
         if total_stockpile > resource_cap:
-            excess = total_stockpile - resource_cap
+            scale = resource_cap / total_stockpile
             cursor.execute("""
                 UPDATE country_resources
-                SET stockpile = stockpile - (
-                    stockpile * 1.0 / (SELECT SUM(stockpile) FROM country_resources WHERE country_code = ?)
-                ) * ?
+                SET stockpile = CAST(stockpile * ? AS INTEGER)
                 WHERE country_code = ?
-            """, (country, excess, country))
+            """, (scale, country))
+            # Re-fetch the capped total for accurate debug output below
+            cursor.execute("""
+                SELECT SUM(stockpile) FROM country_resources WHERE country_code = ?
+            """, (country,))
+            total_stockpile = cursor.fetchone()[0] or 0
 
         # ----- TOTALS -----
         total_income = int(tax_income + building_income)
@@ -281,8 +282,6 @@ def economy_tick():
         # ----- DEBUG OUTPUT -----
         production_named = {resource_names.get(rid, f"ID_{rid}"): amt for rid, amt in production.items()}
         stockpile = get_country_stockpile(cursor, country)
-        cursor.execute("SELECT SUM(stockpile) FROM country_resources WHERE country_code = ?", (country,))
-        total_stockpile = cursor.fetchone()[0] or 0
 
         print(f"\n{country}")
         print(f" Population: {population} | Provinces: {provinces}")

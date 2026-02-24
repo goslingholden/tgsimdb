@@ -19,6 +19,9 @@ def clean(value):
 # ================= IMPORT FUNCTION =================
 
 def import_player_moves(turn_number):
+
+    turn_number = int(turn_number)
+
     filename = os.path.join(MOVES_FOLDER, f"player_moves_turn_{turn_number}.csv")
 
     if not os.path.exists(filename):
@@ -59,9 +62,6 @@ def import_player_moves(turn_number):
 
             move_count = 0
 
-            # Begin transaction
-            conn.execute("BEGIN TRANSACTION;")
-
             for row in reader:
                 cursor.execute("""
                     INSERT INTO player_moves (
@@ -89,8 +89,8 @@ def import_player_moves(turn_number):
 
                 move_count += 1
 
-            conn.commit()
-            print(f"✅ Imported {move_count} moves for turn {turn_number}")
+        conn.commit()
+        print(f"✅ Imported {move_count} moves for turn {turn_number}")
 
     except Exception as e:
         conn.rollback()
@@ -107,6 +107,10 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: py import_moves.py TURN_NUMBER")
         sys.exit(1)
+    try:
+        turn_number = int(sys.argv[1])
+    except ValueError:
+        print(f"❌ Invalid turn number: '{sys.argv[1]}' — must be an integer.")
+        sys.exit(1)
 
-    turn_number = sys.argv[1]
     import_player_moves(turn_number)

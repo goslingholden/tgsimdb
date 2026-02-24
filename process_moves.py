@@ -44,7 +44,9 @@ def unit_exists(cursor, unit_type_id):
 
 def validate_moves(cursor, moves):
     """
-    Returns list of approved moves
+    Validates all moves and returns a list of approved ones with __cost set.
+    Treasuries are tracked in a snapshot so sequential moves from the same
+    country correctly account for each other's costs.
     """
     approved = []
     treasuries = get_country_treasuries(cursor)
@@ -53,17 +55,21 @@ def validate_moves(cursor, moves):
         country = move["country_code"]
         amt = move["amount"]
 
+        if country not in treasuries:
+            log(f"❌ Move {move['id']}: {country} has no economy record, skipping.")
+            continue
+
         if amt <= 0:
-            log(f"❌ Invalid amount in move {move['id']}")
+            log(f"❌ Move {move['id']}: Invalid amount ({amt})")
             continue
 
         if move["move_type"] == "build":
             if not province_owned_by(cursor, move["target_province_id"], country):
-                log(f"❌ {country} invalid province {move['target_province_id']}")
+                log(f"❌ Move {move['id']}: {country} does not own province {move['target_province_id']}")
                 continue
 
             if not building_exists(cursor, move["target_building_type_id"]):
-                log(f"❌ Invalid building id {move['target_building_type_id']}")
+                log(f"❌ Move {move['id']}: Invalid building id {move['target_building_type_id']}")
                 continue
 
             cursor.execute("SELECT base_cost FROM building_types WHERE id = ?", (move["target_building_type_id"],))
@@ -71,21 +77,22 @@ def validate_moves(cursor, moves):
 
         elif move["move_type"] == "recruit":
             if not unit_exists(cursor, move["target_unit_type_id"]):
-                log(f"❌ Invalid unit id {move['target_unit_type_id']}")
+                log(f"❌ Move {move['id']}: Invalid unit id {move['target_unit_type_id']}")
                 continue
 
             cursor.execute("SELECT recruitment_cost FROM unit_types WHERE id = ?", (move["target_unit_type_id"],))
             cost = cursor.fetchone()[0] * amt
 
         else:
-            log(f"❌ Unknown move type {move['move_type']}")
+            log(f"❌ Move {move['id']}: Unknown move type '{move['move_type']}'")
             continue
 
         if treasuries[country] < cost:
-            log(f"❌ {country} cannot afford {move['move_type']} (needs {cost}, has {treasuries[country]})")
+            log(f"❌ Move {move['id']}: {country} cannot afford {move['move_type']} (needs {cost}, has {treasuries[country]})")
             continue
 
-        # Reserve money in validation snapshot
+        # Reserve cost in the snapshot so later moves from the same country
+        # correctly see the reduced treasury
         treasuries[country] -= cost
         move["__cost"] = cost
         approved.append(move)
@@ -170,20 +177,24 @@ def process_moves():
         approved_moves = validate_moves(cursor, moves)
         log(f"\nApproved {len(approved_moves)} moves, rejected {len(moves) - len(approved_moves)}")
     else:
-        approved_moves = moves
+        # Validate each move independently without shared treasury tracking
+        approved_moves = []
+        for move in moves:
+            result = validate_moves(cursor, [move])
+            approved_moves.extend(result)
+        log(f"\nApproved {len(approved_moves)} moves (individual validation mode)")
 
     try:
         conn.execute("BEGIN TRANSACTION;")
 
-        # ===== SIMULTANEOUS EXECUTION =====
+        # ===== EXECUTION =====
         for move in approved_moves:
             msg = execute_move(cursor, move)
             log(msg)
-
             cursor.execute("UPDATE player_moves SET processed = 1 WHERE id = ?", (move["id"],))
 
         conn.commit()
-        print(f"\n✅ EXECUTED {len(approved_moves)} MOVES SIMULTANEOUSLY\n")
+        print(f"\n✅ EXECUTED {len(approved_moves)} MOVES\n")
 
     except Exception as e:
         conn.rollback()

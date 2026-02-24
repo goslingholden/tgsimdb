@@ -191,19 +191,32 @@ def import_modifiers(cursor):
 
 # --------------- BUILDING EFFECTS -----------------
 def import_building_effects(cursor):
+    # FIX: Previously this read building_type_id as a raw integer directly
+    # from the CSV. If the DB is re-seeded and auto-increment IDs shift,
+    # all effects would silently map to the wrong buildings.
+    # Now we look up the ID by building name, consistent with all other importers.
     with open("data/building_effects.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
+            building_name = row.get("building_name", "").strip()
+
+            cursor.execute("SELECT id FROM building_types WHERE name = ?", (building_name,))
+            result = cursor.fetchone()
+            if not result:
+                print(f"⚠ Building type not found: '{building_name}' — skipping effect row.")
+                continue
+            building_type_id = result[0]
+
             cursor.execute("""
                 INSERT OR IGNORE INTO building_effects (
                     building_type_id, scope, modifier_key, value
                 )
                 VALUES (?, ?, ?, ?)
             """, (
-                int(row["building_type_id"]),
+                building_type_id,
                 row.get("scope", ""),
                 row.get("modifier_key", ""),
-                float(row.get("value", 1.0) or 1.0)
+                float(row.get("value", 0.0) or 0.0)
             ))
 
 # --------------- COUNTRY MODIFIERS -----------------
@@ -241,23 +254,34 @@ def main():
     conn.execute("PRAGMA foreign_keys = ON;")
     cursor = conn.cursor()
 
-    import_countries(cursor)
-    import_states(cursor)
-    import_resources(cursor)
-    import_provinces(cursor)
-    import_state_links(cursor)
-    import_building_types(cursor)
-    import_province_buildings(cursor)
-    import_country_economy(cursor)
-    import_unit_types(cursor)
-    import_country_units(cursor)
-    import_modifiers(cursor)
-    import_building_effects(cursor)
-    import_country_modifiers(cursor)
+    # FIX: Wrap the entire import in a transaction so that any failure
+    # rolls back everything, leaving the DB clean rather than half-populated.
+    try:
+        import_countries(cursor)
+        import_states(cursor)
+        import_resources(cursor)
+        import_provinces(cursor)
+        import_state_links(cursor)
+        import_building_types(cursor)
+        import_province_buildings(cursor)
+        import_country_economy(cursor)
+        import_unit_types(cursor)
+        import_country_units(cursor)
+        import_modifiers(cursor)
+        import_building_effects(cursor)
+        import_country_modifiers(cursor)
 
-    conn.commit()
-    conn.close()
-    print("🌍 World data imported successfully.")
+        conn.commit()
+        print("🌍 World data imported successfully.")
+
+    except Exception as e:
+        conn.rollback()
+        print("❌ Import failed. All changes have been rolled back.")
+        print("ERROR:", e)
+        raise
+
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     main()

@@ -2,13 +2,7 @@ from db_utils import get_connection
 
 conn = get_connection()
 cursor = conn.cursor()
-
-# Enforce foreign keys
 conn.execute("PRAGMA foreign_keys = ON;")
-
-# ==========================================================
-# ======================= GEOGRAPHY ========================
-# ==========================================================
 
 # -------------------- COUNTRIES --------------------
 print("Building nations...")
@@ -22,6 +16,18 @@ CREATE TABLE IF NOT EXISTS countries (
 );
 """)
 print("Nation-building completed.")
+
+# ----------------------- RESOURCES ------------------------
+print("Creating resources table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS resources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT,
+    base_price INTEGER DEFAULT 1
+);
+""")
+print("Resources table created successfully.")
 
 # -------------------- PROVINCES --------------------
 print("Creating provinces table...")
@@ -68,17 +74,13 @@ CREATE TABLE IF NOT EXISTS state_provinces (
 """)
 print("State_provinces table created successfully.")
 
-# ==========================================================
-# ===================== ECONOMY SYSTEM =====================
-# ==========================================================
-
 # -------------------- BUILDING TYPES --------------------
 print("Creating building_types table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS building_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
-    building_type TEXT UNIQUE NOT NULL,
+    building_type TEXT NOT NULL,
     base_cost INTEGER NOT NULL,
     base_tax_income INTEGER NOT NULL DEFAULT 0,
     base_production INTEGER NOT NULL DEFAULT 0,
@@ -138,10 +140,6 @@ CREATE TABLE IF NOT EXISTS country_economy (
 """)
 print("Country economy table created successfully.")
 
-# ==========================================================
-# ==================== MILITARY SYSTEM =====================
-# ==========================================================
-
 # --------------------- UNIT TYPES -------------------------
 print("Creating unit_types table...")
 cursor.execute("""
@@ -171,17 +169,13 @@ CREATE TABLE IF NOT EXISTS country_units (
 """)
 print("Country units table created successfully.")
 
-# ==========================================================
-# ======================= MODIFIERS ========================
-# ==========================================================
-
 # ------------------- MASTER MODIFIER ----------------------
 print("Creating master modifier table...")
 cursor.execute("""
-CREATE TABLE modifiers (
+CREATE TABLE IF NOT EXISTS modifiers (
     modifier_key TEXT PRIMARY KEY,
     description TEXT NOT NULL,
-    default_value REAL DEFAULT 0
+    default_value REAL DEFAULT 1.0
 );
 """)
 print("Master modifiers table created successfully.")
@@ -189,7 +183,7 @@ print("Master modifiers table created successfully.")
 # ------------------- BUILDING EFFECTS ---------------------
 print("Creating building effects table...")
 cursor.execute("""
-CREATE TABLE building_effects (
+CREATE TABLE IF NOT EXISTS building_effects (
     building_type_id INTEGER,
     scope TEXT CHECK(scope IN ('province','country')),
     modifier_key TEXT,
@@ -204,7 +198,7 @@ print("Building effects table created successfully.")
 # ------------------- COUNTRY MODIFIERS ---------------------
 print("Creating country modifiers table...")
 cursor.execute("""
-CREATE TABLE country_modifiers (
+CREATE TABLE IF NOT EXISTS country_modifiers (
     country_code TEXT,
     modifier_key TEXT,
     value REAL DEFAULT 0,
@@ -232,7 +226,7 @@ print("Country modifiers table created successfully.")
 # ------------------- MODIFIER SOURCES ----------------------
 print("Creating modifier sources table...")
 cursor.execute("""
-CREATE TABLE modifier_sources (
+CREATE TABLE IF NOT EXISTS modifier_sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     scope TEXT CHECK(scope IN ('province','country')),
     scope_id TEXT,
@@ -243,22 +237,6 @@ CREATE TABLE modifier_sources (
 );
 """)
 print("Modifiers source table created successfully.")
-
-# ==========================================================
-# ======================= RESOURCES ========================
-# ==========================================================
-
-# ----------------------- RESOURCES ------------------------
-print("Creating resources table...")
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS resources (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL,
-    description TEXT,
-    base_price INTEGER DEFAULT 1
-);
-""")
-print("Resources table created successfully.")
 
 # ------------------- COUNTRY RESOURCES ---------------------
 print("Creating country_resources table...")
@@ -273,10 +251,6 @@ CREATE TABLE IF NOT EXISTS country_resources (
 );
 """)
 print("Country resources table created successfully.")
-
-# ==========================================================
-# ===================== PLAYER MOVES =======================
-# ==========================================================
 
 # --------------------- MOVES TABLE ------------------------
 print("Creating player_moves table...")
