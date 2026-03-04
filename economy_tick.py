@@ -74,6 +74,14 @@ def get_building_country_modifier(cursor, country, key):
 
     return 1 + (cursor.fetchone()[0] or 0.0)
 
+def get_building_modifier(cursor, country, key):
+    cursor.execute("""
+        SELECT value FROM country_modifiers 
+        WHERE country_code = ? AND modifier_key = ?
+    """, (country, key))
+    row = cursor.fetchone()
+    return row[0] if row else 0.0
+
 
 # ================== DEMOGRAPHICS ==================
 

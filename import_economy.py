@@ -71,18 +71,22 @@ def import_economy():
 
         # ----- MODIFIERS -----
         tax_eff = get_country_modifier(cursor, country, "tax_efficiency") * \
-                  get_building_country_modifier(cursor, country, "tax_efficiency")
+                  get_building_country_modifier(cursor, country, "tax_efficiency") * \
+                  get_country_modifier(cursor, country, "building_tax_efficiency")
 
         admin_mod = get_country_modifier(cursor, country, "admin_cost_modifier") * \
-                    get_building_country_modifier(cursor, country, "admin_cost_modifier")
+                    get_building_country_modifier(cursor, country, "admin_cost_modifier") * \
+                    get_country_modifier(cursor, country, "building_admin_efficiency")
 
         unit_limit_mod = get_country_modifier(cursor, country, "unit_limit_modifier") * \
-                         get_building_country_modifier(cursor, country, "unit_limit_modifier")
+                         get_building_country_modifier(cursor, country, "unit_limit_modifier") * \
+                         get_country_modifier(cursor, country, "building_military_unit_limit_mult")
 
         upkeep_mod = get_country_modifier(cursor, country, "military_upkeep_modifier") * \
                      get_building_country_modifier(cursor, country, "military_upkeep_modifier")
 
-        building_income_mult = get_building_country_modifier(cursor, country, "building_income_mult")
+        building_income_mult = get_building_country_modifier(cursor, country, "building_income_mult") * \
+                               get_country_modifier(cursor, country, "building_production_efficiency")
 
         # ----- TAX -----
         base_tax = population * BASE_TAX_PER_POP
