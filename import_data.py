@@ -191,10 +191,6 @@ def import_modifiers(cursor):
 
 # --------------- BUILDING EFFECTS -----------------
 def import_building_effects(cursor):
-    # FIX: Previously this read building_type_id as a raw integer directly
-    # from the CSV. If the DB is re-seeded and auto-increment IDs shift,
-    # all effects would silently map to the wrong buildings.
-    # Now we look up the ID by building name, consistent with all other importers.
     with open("data/building_effects.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
