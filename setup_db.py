@@ -12,7 +12,11 @@ CREATE TABLE IF NOT EXISTS countries (
     name TEXT UNIQUE NOT NULL,
     culture TEXT NOT NULL DEFAULT 'Unknown',
     religion TEXT NOT NULL DEFAULT 'Unknown',
-    unrest INTEGER NOT NULL DEFAULT 0
+    stability INTEGER NOT NULL DEFAULT 50,
+    unrest INTEGER NOT NULL DEFAULT 0,
+    corruption REAL NOT NULL DEFAULT 0.0,
+    at_war INTEGER NOT NULL DEFAULT 0,
+    war_exhaustion INTEGER NOT NULL DEFAULT 0
 );
 """)
 print("Nation-building completed.")
@@ -48,31 +52,31 @@ CREATE TABLE IF NOT EXISTS provinces (
 """)
 print("Provinces table created successfully.")
 
-# -------------------- STATES --------------------
-print("Creating the states table...")
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS states (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL,
-    food INTEGER NOT NULL DEFAULT 0,
-    stability INTEGER NOT NULL DEFAULT 50,
-    loyalty INTEGER NOT NULL DEFAULT 50
-);
-""")
-print("States table created successfully.")
+## -------------------- STATES --------------------
+# print("Creating the states table...")
+# cursor.execute("""
+# CREATE TABLE IF NOT EXISTS states (
+#     id INTEGER PRIMARY KEY AUTOINCREMENT,
+#     name TEXT UNIQUE NOT NULL,
+#     food INTEGER NOT NULL DEFAULT 0,
+#     stability INTEGER NOT NULL DEFAULT 50,
+#     loyalty INTEGER NOT NULL DEFAULT 50
+# );
+# """)
+# print("States table created successfully.")
 
 # -------------------- STATE-PROVINCE LINK --------------------
-print("Creating state_provinces table...")
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS state_provinces (
-    state_id INTEGER,
-    province_id INTEGER,
-    PRIMARY KEY (state_id, province_id),
-    FOREIGN KEY (state_id) REFERENCES states(id),
-    FOREIGN KEY (province_id) REFERENCES provinces(id)
-);
-""")
-print("State_provinces table created successfully.")
+# print("Creating state_provinces table...")
+# cursor.execute("""
+# CREATE TABLE IF NOT EXISTS state_provinces (
+#     state_id INTEGER,
+#     province_id INTEGER,
+#     PRIMARY KEY (state_id, province_id),
+#     FOREIGN KEY (state_id) REFERENCES states(id),
+#     FOREIGN KEY (province_id) REFERENCES provinces(id)
+# );
+# """)
+# print("State_provinces table created successfully.")
 
 # -------------------- BUILDING TYPES --------------------
 print("Creating building_types table...")
@@ -111,30 +115,16 @@ CREATE TABLE IF NOT EXISTS country_economy (
     country_code TEXT PRIMARY KEY,
     treasury INTEGER NOT NULL DEFAULT 0,
     tax_rate REAL NOT NULL DEFAULT 0.1,
-
-    -- Income
     tax_income INTEGER NOT NULL DEFAULT 0,
     building_income INTEGER NOT NULL DEFAULT 0,
     total_income INTEGER NOT NULL DEFAULT 0,
-
-    -- Expenses
     administration_cost INTEGER NOT NULL DEFAULT 0,
     building_upkeep INTEGER NOT NULL DEFAULT 0,
     military_upkeep INTEGER NOT NULL DEFAULT 0,
     total_expenses INTEGER NOT NULL DEFAULT 0,
-
-    -- Modifiers
     tax_efficiency REAL NOT NULL DEFAULT 1.0,
-    corruption REAL NOT NULL DEFAULT 0.0,
     economic_growth REAL NOT NULL DEFAULT 0.0,
-
-    -- Snapshot data
     total_population INTEGER NOT NULL DEFAULT 0,
-
-    -- Crisis flags
-    at_war INTEGER NOT NULL DEFAULT 0,
-    war_exhaustion INTEGER NOT NULL DEFAULT 0,
-
     FOREIGN KEY (country_code) REFERENCES countries(code)
 );
 """)
@@ -224,19 +214,19 @@ print("Country modifiers table created successfully.")
 # print("Province modifiers table created successfully.")
 
 # ------------------- MODIFIER SOURCES ----------------------
-print("Creating modifier sources table...")
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS modifier_sources (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    scope TEXT CHECK(scope IN ('province','country')),
-    scope_id TEXT,
-    modifier_key TEXT,
-    value REAL,
-    source_type TEXT,
-    source_id TEXT
-);
-""")
-print("Modifiers source table created successfully.")
+# print("Creating modifier sources table...")
+# cursor.execute("""
+# CREATE TABLE IF NOT EXISTS modifier_sources (
+#     id INTEGER PRIMARY KEY AUTOINCREMENT,
+#     scope TEXT CHECK(scope IN ('province','country')),
+#     scope_id TEXT,
+#     modifier_key TEXT,
+#     value REAL,
+#     source_type TEXT,
+#     source_id TEXT
+# );
+# """)
+# print("Modifiers source table created successfully.")
 
 # ------------------- COUNTRY RESOURCES ---------------------
 print("Creating country_resources table...")

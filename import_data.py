@@ -8,14 +8,19 @@ def import_countries(cursor):
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
-                INSERT OR IGNORE INTO countries (code, name, culture, religion, unrest)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO countries (code, name, culture, religion, stability, 
+                    unrest, corruption, at_war, war_exhaustion)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 row["code"],
                 row["name"],
                 row.get("culture", "Unknown"),
                 row.get("religion", "Unknown"),
-                int(row.get("unrest", 0))
+                int(row.get("stability", 50)),
+                int(row.get("unrest", 0)),
+                float(row.get("corruption", 0.0)),
+                int(row.get("at_war", 0)),
+                int(row.get("war_exhaustion", 0))
             ))
 
 # -------------------- STATES --------------------
@@ -250,14 +255,12 @@ def main():
     conn.execute("PRAGMA foreign_keys = ON;")
     cursor = conn.cursor()
 
-    # FIX: Wrap the entire import in a transaction so that any failure
-    # rolls back everything, leaving the DB clean rather than half-populated.
     try:
         import_countries(cursor)
-        import_states(cursor)
+        #import_states(cursor)
         import_resources(cursor)
         import_provinces(cursor)
-        import_state_links(cursor)
+        #import_state_links(cursor)
         import_building_types(cursor)
         import_province_buildings(cursor)
         import_country_economy(cursor)
