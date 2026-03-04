@@ -43,6 +43,149 @@ def validate_schema(cursor):
 
     print("✅ DB schema validated")
 
+def validate_political_data(cursor):
+    """Validate political values are within bounds."""
+    
+    cursor.execute("""
+        SELECT code, stability, unrest, corruption, war_exhaustion
+        FROM countries
+        WHERE stability NOT BETWEEN 0 AND 100
+           OR unrest NOT BETWEEN 0 AND 100
+           OR corruption NOT BETWEEN 0.0 AND 1.0
+           OR war_exhaustion NOT BETWEEN 0 AND 100
+    """)
+    
+    invalid = cursor.fetchall()
+    if invalid:
+        print("❌ Invalid political values found:")
+        for row in invalid:
+            print(f"  {row[0]}: stability={row[1]}, unrest={row[2]}, corruption={row[3]}, war_exhaustion={row[4]}")
+        return False
+    return True
+
+# ================ POLITICAL MODIFIERS ================
+def calculate_political_modifiers(cursor, country_code):
+    """Calculate all political modifiers for a country."""
+    
+    cursor.execute("""
+        SELECT stability, unrest, corruption, at_war, war_exhaustion
+        FROM countries WHERE code = ?
+    """, (country_code,))
+    row = cursor.fetchone()
+    
+    if not row:
+        return None
+    
+    stability, unrest, corruption, at_war, war_exhaustion = row
+    
+    # Load config
+    config = configparser.ConfigParser()
+    config.read("config.ini")
+    
+    # Calculate modifiers
+    tax_efficiency_mod = 1.0
+    admin_cost_mod = 1.0
+    military_upkeep_mod = 1.0
+    unrest_change = 0.0
+    stability_change = 0.0
+    corruption_change = 0.0
+    war_exhaustion_change = 0.0
+    population_change = 0
+    
+    # Stability effects
+    tax_efficiency_mod += (stability - 50) * 0.002
+    unrest_change += (50 - stability) * 0.1
+    
+    # Unrest effects
+    admin_cost_mod += unrest * float(config["politics"]["unrest_admin_multiplier"])
+    tax_efficiency_mod -= unrest * float(config["politics"]["unrest_tax_penalty"])
+    tax_efficiency_mod = max(0.5, tax_efficiency_mod)  # Cap minimum
+    stability_change -= unrest * float(config["politics"]["unrest_stability_drain"])
+    
+    if unrest > float(config["politics"]["unrest_high_threshold"]):
+        pop_loss = int((unrest - 70) * float(config["politics"]["unrest_population_loss_factor"]))
+        population_change -= pop_loss
+    
+    # Corruption effects
+    corruption_change = corruption * 0.01  # Natural decay
+    if at_war:
+        corruption_change += float(config["politics"]["corruption_war_increase"])
+    
+    # War effects
+    if at_war:
+        military_upkeep_mod *= float(config["politics"]["war_military_upkeep_multiplier"])
+        admin_cost_mod += float(config["politics"]["war_admin_cost_multiplier"])
+        war_exhaustion_change += float(config["politics"]["war_exhaustion_per_turn"])
+        tax_efficiency_mod -= war_exhaustion * 0.001
+        unrest_change += war_exhaustion * 0.1
+        stability_change -= war_exhaustion * 0.05
+        military_upkeep_mod *= (1 + war_exhaustion * 0.003)
+    
+    # War exhaustion effects (applied even if not at war)
+    if war_exhaustion > 0:
+        tax_efficiency_mod -= war_exhaustion * 0.001
+        unrest_change += war_exhaustion * 0.1
+        stability_change -= war_exhaustion * 0.05
+    
+    return {
+        'tax_efficiency_mod': max(0.1, tax_efficiency_mod),
+        'admin_cost_mod': admin_cost_mod,
+        'military_upkeep_mod': military_upkeep_mod,
+        'unrest_change': unrest_change,
+        'stability_change': stability_change,
+        'corruption_change': corruption_change,
+        'war_exhaustion_change': war_exhaustion_change,
+        'population_change': population_change,
+        # Include raw values for calculations and debugging
+        'stability': stability,
+        'unrest': unrest,
+        'corruption': corruption,
+        'at_war': at_war,
+        'war_exhaustion': war_exhaustion
+    }
+
+def calculate_population_growth(population, stability, unrest, corruption):
+    """Calculate natural population growth based on stability, unrest, corruption."""
+    config = configparser.ConfigParser()
+    config.read("config.ini")
+    
+    base_growth_rate = float(config["population"]["base_growth_rate"])
+    stability_bonus = (stability - 50) * 0.0005
+    unrest_penalty = -unrest * 0.001
+    corruption_penalty = -corruption * 0.01
+    
+    total_growth_rate = base_growth_rate + stability_bonus + unrest_penalty + corruption_penalty
+    total_growth_rate = max(0.0, total_growth_rate)
+    
+    growth_amount = int(population * total_growth_rate)
+    return growth_amount, total_growth_rate
+
+def update_province_populations(cursor, country_code, net_pop_change):
+    """Update population in all provinces of a country by distributing net change proportionally."""
+    if net_pop_change == 0:
+        return
+    
+    cursor.execute("SELECT id, population FROM provinces WHERE owner_country_code = ?", (country_code,))
+    provinces = cursor.fetchall()
+    if not provinces:
+        return
+    
+    total_current_pop = sum(p[1] for p in provinces)
+    if total_current_pop == 0:
+        return
+    
+    # Distribute proportionally with rounding
+    remaining = net_pop_change
+    for i, (province_id, pop) in enumerate(provinces):
+        if i == len(provinces) - 1:
+            # Last province gets whatever remains to ensure total matches
+            pop_change = remaining
+        else:
+            share = pop / total_current_pop
+            pop_change = int(net_pop_change * share)
+        new_pop = max(0, pop + pop_change)
+        cursor.execute("UPDATE provinces SET population = ? WHERE id = ?", (new_pop, province_id))
+        remaining -= pop_change
 
 # ================== MODIFIER SYSTEM ==================
 
@@ -128,36 +271,24 @@ def get_building_economy(cursor, country):
     income, upkeep = cursor.fetchone()
     return income or 0, upkeep or 0
 
-
-# ================= RESOURCE SYSTEM =================
-
-def get_resource_names(cursor):
-    cursor.execute("SELECT id, name FROM resources")
-    return {rid: name for rid, name in cursor.fetchall()}
-
-
+# =================== RESOURCES ===================
 def get_resource_production(cursor, country):
-    cursor.execute("""
-        SELECT resource_id, COUNT(*) 
-        FROM provinces
-        WHERE owner_country_code = ?
-        AND resource_id IS NOT NULL
-        GROUP BY resource_id
-    """, (country,))
-
-    return {rid: count * RESOURCE_PRODUCTION for rid, count in cursor.fetchall()}
-
-
-def get_country_stockpile(cursor, country):
-    cursor.execute("""
-        SELECT r.name, cr.stockpile
-        FROM country_resources cr
-        JOIN resources r ON cr.resource_id = r.id
-        WHERE cr.country_code = ?
-        ORDER BY r.name
-    """, (country,))
-    return cursor.fetchall()
-
+    """Calculate resource production for a country.
+    
+    Returns a dictionary mapping resource_id to production amount.
+    Each resource type produces RESOURCE_PRODUCTION amount per turn.
+    """
+    config = configparser.ConfigParser()
+    config.read("config.ini")
+    
+    production_per_resource = int(config["resources"]["resource_production"])
+    
+    # Get all resource IDs from the resources table
+    cursor.execute("SELECT id FROM resources")
+    resources = cursor.fetchall()
+    
+    # Return same production amount for each resource type
+    return {rid[0]: production_per_resource for rid in resources}
 
 # ================== ECONOMY TICK ==================
 
@@ -165,18 +296,16 @@ def economy_tick():
     conn = get_connection()
     conn.execute("PRAGMA foreign_keys = ON;")
     cursor = conn.cursor()
-
+    
     validate_schema(cursor)
-
+    
     cursor.execute("SELECT code FROM countries")
     countries = [c[0] for c in cursor.fetchall()]
-
-    resource_names = get_resource_names(cursor)
-
+    
     print("\n=== ECONOMY TICK START ===")
-
+    
     for country in countries:
-
+        # Get base economy data
         cursor.execute("""
             SELECT treasury, tax_rate
             FROM country_economy
@@ -186,82 +315,86 @@ def economy_tick():
         if not row:
             print(f"⚠ No economy row for {country}")
             continue
-
+        
         treasury, tax_rate = row
-
+        
+        # Get population and provinces
         population = get_population(cursor, country)
         provinces = get_province_count(cursor, country)
-
-        # ----- MODIFIERS -----
-        tax_eff = get_country_modifier(cursor, country, "tax_efficiency") * \
-                  get_building_country_modifier(cursor, country, "tax_efficiency")
-
-        admin_mod = get_country_modifier(cursor, country, "admin_cost_modifier") * \
-                    get_building_country_modifier(cursor, country, "admin_cost_modifier")
-
-        unit_limit_mod = get_country_modifier(cursor, country, "unit_limit_modifier") * \
-                         get_building_country_modifier(cursor, country, "unit_limit_modifier")
-
-        upkeep_mod = get_country_modifier(cursor, country, "military_upkeep_modifier") * \
-                     get_building_country_modifier(cursor, country, "military_upkeep_modifier")
-
-        building_income_mult = get_building_country_modifier(cursor, country, "building_income_mult")
-
-        # ----- TAX -----
-        base_tax = population * BASE_TAX_PER_POP
+        
+        # Calculate political modifiers
+        political_mods = calculate_political_modifiers(cursor, country)
+        if not political_mods:
+            continue
+        
+        # --- Apply population growth (add to population_change) ---
+        pop_growth, pop_growth_rate = calculate_population_growth(
+            population,
+            political_mods['stability'],
+            political_mods['unrest'],
+            political_mods['corruption']
+        )
+        political_mods['population_change'] += pop_growth
+        
+        # --- Apply modifiers to existing calculations ---
+        tax_eff = get_country_modifier(cursor, country, "tax_efficiency")
+        tax_eff *= political_mods['tax_efficiency_mod']
+        
+        admin_mod = political_mods['admin_cost_mod']
+        
+        upkeep_mod = get_country_modifier(cursor, country, "military_upkeep_modifier")
+        upkeep_mod *= political_mods['military_upkeep_mod']
+        
+        # Existing calculations
+        base_tax = population * float(config["economy"]["base_tax_per_pop"])
         tax_income = base_tax * tax_rate * tax_eff
-
-        # ----- ADMIN -----
-        administration_cost = provinces * ADMIN_COST_PER_PROVINCE * admin_mod
-
-        # ----- MILITARY -----
+        
+        # Apply corruption tax loss using raw corruption value
+        tax_income_after_corruption = tax_income * (1 - political_mods['corruption'] * 0.5)
+        
+        administration_cost = provinces * float(config["economy"]["admin_cost_per_province"]) * admin_mod
+        
         base_upkeep = get_military_upkeep(cursor, country)
         military_upkeep = base_upkeep * upkeep_mod
-
-        # ----- BUILDINGS -----
+        
         building_income_raw, building_upkeep = get_building_economy(cursor, country)
+        building_income_mult = get_building_country_modifier(cursor, country, "building_income_mult")
         building_income = building_income_raw * building_income_mult
-
-        # ----- UNIT LIMIT -----
-        unit_limit = int((population * BASE_UNIT_RATIO * unit_limit_mod) / POP_PER_UNIT + 5)
-        total_units = get_total_units(cursor, country)
-
-        # ----- RESOURCES -----
-        production = get_resource_production(cursor, country)
-        resource_cap = provinces * RESOURCE_CAP_PER_PROVINCE
-
-        # Add production to stockpile
-        for rid, amount in production.items():
-            cursor.execute("""
-                INSERT INTO country_resources (country_code, resource_id, stockpile)
-                VALUES (?, ?, ?)
-                ON CONFLICT(country_code, resource_id)
-                DO UPDATE SET stockpile = stockpile + ?
-            """, (country, rid, amount, amount))
-        cursor.execute("""
-            SELECT SUM(stockpile) FROM country_resources WHERE country_code = ?
-        """, (country,))
-        total_stockpile = cursor.fetchone()[0] or 0
-
-        if total_stockpile > resource_cap:
-            scale = resource_cap / total_stockpile
-            cursor.execute("""
-                UPDATE country_resources
-                SET stockpile = CAST(stockpile * ? AS INTEGER)
-                WHERE country_code = ?
-            """, (scale, country))
-            # Re-fetch the capped total for accurate debug output below
-            cursor.execute("""
-                SELECT SUM(stockpile) FROM country_resources WHERE country_code = ?
-            """, (country,))
-            total_stockpile = cursor.fetchone()[0] or 0
-
-        # ----- TOTALS -----
-        total_income = int(tax_income + building_income)
+        
+        # --- Economic growth calculation ---
+        base_growth = float(config["politics"]["base_economic_growth"])
+        growth_stability = (political_mods['stability'] - 50) * 0.0005
+        growth_unrest = -political_mods['unrest'] * 0.0005
+        growth_corruption = -political_mods['corruption'] * 0.02
+        growth_war = -0.015 if political_mods['at_war'] else 0
+        growth_buildings = building_income_raw * float(config["politics"]["growth_building_factor"])
+        
+        total_growth_rate = base_growth + growth_stability + growth_unrest + growth_corruption + growth_war + growth_buildings
+        total_growth_rate = max(0.0, total_growth_rate)
+        
+        growth_amount = int(treasury * total_growth_rate)
+        
+        # --- Calculate totals including growth as income ---
+        total_income = int(tax_income_after_corruption + building_income + growth_amount)
         total_expenses = int(administration_cost + military_upkeep + building_upkeep)
         new_treasury = treasury + total_income - total_expenses
-
-        # SAVE
+        
+        # --- Compute new political values for display ---
+        old_stability = political_mods['stability']
+        old_unrest = political_mods['unrest']
+        old_corruption = political_mods['corruption']
+        old_war_exhaustion = political_mods['war_exhaustion']
+        
+        new_stability = max(0, min(100, old_stability + political_mods['stability_change']))
+        new_unrest = max(0, min(100, old_unrest + political_mods['unrest_change']))
+        new_corruption = max(0.0, min(1.0, old_corruption + political_mods['corruption_change']))
+        new_war_exhaustion = max(0, min(100, old_war_exhaustion + political_mods['war_exhaustion_change']))
+        
+        # --- Update province populations ---
+        update_province_populations(cursor, country, political_mods['population_change'])
+        
+        # --- Update country economy ---
+        new_total_population = population + political_mods['population_change']
         cursor.execute("""
             UPDATE country_economy SET
                 treasury = ?,
@@ -272,48 +405,50 @@ def economy_tick():
                 military_upkeep = ?,
                 building_upkeep = ?,
                 total_expenses = ?,
-                total_population = ?
+                total_population = ?,
+                economic_growth = ?
             WHERE country_code = ?
         """, (
             new_treasury,
-            int(tax_income),
+            int(tax_income_after_corruption),
             int(building_income),
             total_income,
             int(administration_cost),
             int(military_upkeep),
             int(building_upkeep),
             total_expenses,
-            population,
+            new_total_population,
+            total_growth_rate,
             country
         ))
-
-        # ----- DEBUG OUTPUT -----
-        production_named = {resource_names.get(rid, f"ID_{rid}"): amt for rid, amt in production.items()}
-        stockpile = get_country_stockpile(cursor, country)
-
+        
+        # --- Update political state ---
+        cursor.execute("""
+            UPDATE countries SET
+                stability = ?,
+                unrest = ?,
+                corruption = ?,
+                war_exhaustion = ?
+            WHERE code = ?
+        """, (new_stability, new_unrest, new_corruption, new_war_exhaustion, country))
+        
+        # --- Debug output ---
         print(f"\n{country}")
-        print(f" Population: {population} | Provinces: {provinces}")
-        print(f" Tax Eff x{tax_eff:.3f} | Admin Mod x{admin_mod:.3f}")
-        print(f" Buildings Raw: Income {building_income_raw}, Upkeep {building_upkeep}")
-        print(f" Unit Limit: {total_units}/{unit_limit}")
-
-        print(f" Resource Cap: {resource_cap} | Total Stockpile: {int(total_stockpile)}")
-        print(" Resource Production This Turn:")
-        for name, amt in production_named.items():
-            print(f"   +{amt} {name}")
-
-        print(" Resource Stockpile:")
-        for name, amt in stockpile:
-            print(f"   {name}: {int(amt)}")
-
-        print(f" Income: Tax {int(tax_income)} | Buildings {int(building_income)}")
+        print(f" Population: {population} → {new_total_population} (change: {political_mods['population_change']:+d})")
+        print(f" Stability: {old_stability:.1f} → {new_stability:.1f} (change: {political_mods['stability_change']:.2f})")
+        print(f" Unrest: {old_unrest:.1f} → {new_unrest:.1f} (change: {political_mods['unrest_change']:.2f})")
+        print(f" Corruption: {old_corruption:.3f} → {new_corruption:.3f} (change: {political_mods['corruption_change']:.3f})")
+        print(f" War Exhaustion: {old_war_exhaustion:.1f} → {new_war_exhaustion:.1f} (change: {political_mods['war_exhaustion_change']:.2f})")
+        print(f" Tax Eff: {tax_eff:.3f} (political mod: {political_mods['tax_efficiency_mod']:.3f})")
+        print(f" Income: Tax {int(tax_income_after_corruption)} | Buildings {int(building_income)} | Growth {growth_amount}")
         print(f" Expenses: Admin {int(administration_cost)} | Military {int(military_upkeep)} | Buildings {int(building_upkeep)}")
         print(f" Treasury: {treasury} → {new_treasury}")
         print("--------------------------------------------------")
-
+    
     conn.commit()
     conn.close()
     print("\n✅ ECONOMY TICK COMPLETE\n")
+
 
 
 if __name__ == "__main__":

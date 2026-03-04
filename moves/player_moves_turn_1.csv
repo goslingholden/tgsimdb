@@ -1,3 +1,6 @@
 country_code,move_type,province_id,building_type_id,unit_type_id,amount,notes
 CAR,build,1,1,,1,Fattoria a Trapani
 MAG,recruit,,,1,1,Fanteria
+CAR,declare_war,,,,,
+CAR,anti_corruption,2,,,3,Anti-corruzione
+MAG,stabilize,,,,2,Editti di stabilizzaz.

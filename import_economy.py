@@ -111,14 +111,8 @@ def import_economy():
         production = get_resource_production(cursor, country)
         resource_cap = provinces * RESOURCE_CAP_PER_PROVINCE
 
-        # Add production to stockpile
-        for rid, amount in production.items():
-            cursor.execute("""
-                INSERT INTO country_resources (country_code, resource_id, stockpile)
-                VALUES (?, ?, ?)
-                ON CONFLICT(country_code, resource_id)
-                DO UPDATE SET stockpile = stockpile + ?
-            """, (country, rid, amount, amount))
+        # NOTE: import_economy only calculates production, does not modify stockpile.
+        # Resource stockpiles are managed by economy_tick.
 
         # ----- TOTALS -----
         total_income = int(tax_income + building_income)

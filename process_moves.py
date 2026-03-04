@@ -22,6 +22,24 @@ def get_country_treasuries(cursor):
     return {c: t for c, t in cursor.fetchall()}
 
 
+def get_country_politics(cursor, country_code):
+    """Get current political values for a country."""
+    cursor.execute("""
+        SELECT stability, unrest, corruption, at_war, war_exhaustion
+        FROM countries WHERE code = ?
+    """, (country_code,))
+    row = cursor.fetchone()
+    if not row:
+        return None
+    return {
+        'stability': row[0],
+        'unrest': row[1],
+        'corruption': row[2],
+        'at_war': row[3],
+        'war_exhaustion': row[4]
+    }
+
+
 def province_owned_by(cursor, province_id, country):
     cursor.execute("""
         SELECT 1 FROM provinces
@@ -41,6 +59,62 @@ def unit_exists(cursor, unit_type_id):
 
 
 # ================= VALIDATION PHASE =================
+
+def validate_political_move(cursor, move, treasuries):
+    """Validate political action moves."""
+    country = move["country_code"]
+    amt = move["amount"]
+    move_type = move["move_type"]
+    
+    # Get current political state
+    politics = get_country_politics(cursor, country)
+    if not politics:
+        return False, f"{country} has no political data"
+    
+    config = configparser.ConfigParser()
+    config.read("config.ini")
+    
+    # Check affordability
+    cost = 0
+    if move_type == "anti_corruption":
+        cost = amt * float(config["political_actions"]["anti_corruption_cost_per_unit"])
+        if politics['corruption'] <= 0:
+            return False, f"{country} has no corruption to reduce"
+    elif move_type == "stabilize":
+        cost = amt * float(config["political_actions"]["stabilize_cost_per_unit"])
+        if politics['stability'] >= 100:
+            return False, f"{country} stability already at maximum"
+    elif move_type == "reduce_unrest":
+        cost = amt * float(config["political_actions"]["reduce_unrest_cost_per_unit"])
+        if politics['unrest'] <= 0:
+            return False, f"{country} has no unrest to reduce"
+    elif move_type == "propaganda_campaign":
+        cost = amt * float(config["political_actions"]["propaganda_cost_per_unit"])
+    elif move_type == "war_effort":
+        cost = amt * float(config["political_actions"]["war_effort_cost_per_unit"])
+        if not politics['at_war']:
+            return False, f"{country} is not at war"
+        if politics['war_exhaustion'] <= 0:
+            return False, f"{country} has no war exhaustion"
+    elif move_type == "declare_war":
+        if politics['at_war']:
+            return False, f"{country} is already at war"
+        # No cost for declaring war
+    elif move_type == "make_peace":
+        if not politics['at_war']:
+            return False, f"{country} is not at war"
+        # No cost for making peace
+    else:
+        return False, f"Unknown political move type: {move_type}"
+    
+    if treasuries[country] < cost:
+        return False, f"{country} cannot afford {move_type} (needs {cost}, has {treasuries[country]})"
+    
+    # Reserve cost
+    treasuries[country] -= cost
+    move["__cost"] = cost
+    return True, "OK"
+
 
 def validate_moves(cursor, moves):
     """
@@ -63,6 +137,19 @@ def validate_moves(cursor, moves):
             log(f"❌ Move {move['id']}: Invalid amount ({amt})")
             continue
 
+        # ===== POLITICAL MOVES =====
+        political_move_types = ["declare_war", "make_peace", "anti_corruption", 
+                               "stabilize", "reduce_unrest", "propaganda_campaign", "war_effort"]
+        
+        if move["move_type"] in political_move_types:
+            valid, msg = validate_political_move(cursor, move, treasuries)
+            if not valid:
+                log(f"❌ Move {move['id']}: {msg}")
+                continue
+            approved.append(move)
+            continue
+
+        # ===== EXISTING VALIDATION (build, recruit) =====
         if move["move_type"] == "build":
             if not province_owned_by(cursor, move["target_province_id"], country):
                 log(f"❌ Move {move['id']}: {country} does not own province {move['target_province_id']}")
@@ -102,17 +189,101 @@ def validate_moves(cursor, moves):
 
 # ================= EXECUTION PHASE =================
 
-def execute_move(cursor, move):
+def execute_political_move(cursor, move):
+    """Execute a political action move."""
     country = move["country_code"]
     amt = move["amount"]
+    move_type = move["move_type"]
+    
+    config = configparser.ConfigParser()
+    config.read("config.ini")
+    
+    # Get current values
+    cursor.execute("""
+        SELECT stability, unrest, corruption, at_war, war_exhaustion
+        FROM countries WHERE code = ?
+    """, (country,))
+    stability, unrest, corruption, at_war, war_exhaustion = cursor.fetchone()
+    
+    changes = {}
+    
+    if move_type == "declare_war":
+        cursor.execute("UPDATE countries SET at_war = 1 WHERE code = ?", (country,))
+        changes = {'at_war': 0, 'war_exhaustion': war_exhaustion}
+        msg = f"⚔ {country} declared war!"
+    
+    elif move_type == "make_peace":
+        reduction = float(config["political_actions"]["peace_war_exhaustion_reduction"])
+        new_war_exhaustion = max(0, war_exhaustion - reduction)
+        cursor.execute("""
+            UPDATE countries SET at_war = 0, war_exhaustion = ? WHERE code = ?
+        """, (new_war_exhaustion, country))
+        changes = {'at_war': 1, 'war_exhaustion': new_war_exhaustion}
+        msg = f"☮ {country} made peace (war exhaustion reduced by {reduction})"
+    
+    elif move_type == "anti_corruption":
+        reduction_per_unit = float(config["political_actions"]["anti_corruption_reduction_per_unit"])
+        total_reduction = min(amt * reduction_per_unit, corruption)  # Can't go below 0
+        new_corruption = max(0, corruption - total_reduction)
+        cursor.execute("UPDATE countries SET corruption = ? WHERE code = ?", (new_corruption, country))
+        changes = {'corruption': new_corruption}
+        msg = f"🔍 {country} reduced corruption by {total_reduction:.3f} (cost: {move['__cost']})"
+    
+    elif move_type == "stabilize":
+        increase_per_unit = float(config["political_actions"]["stabilize_increase_per_unit"])
+        total_increase = min(amt * increase_per_unit, 100 - stability)  # Cap at 100
+        new_stability = min(100, stability + total_increase)
+        cursor.execute("UPDATE countries SET stability = ? WHERE code = ?", (new_stability, country))
+        changes = {'stability': new_stability}
+        msg = f"📊 {country} increased stability by {total_increase} (cost: {move['__cost']})"
+    
+    elif move_type == "reduce_unrest":
+        reduction_per_unit = float(config["political_actions"]["reduce_unrest_reduction_per_unit"])
+        total_reduction = min(amt * reduction_per_unit, unrest)  # Can't go below 0
+        new_unrest = max(0, unrest - total_reduction)
+        cursor.execute("UPDATE countries SET unrest = ? WHERE code = ?", (new_unrest, country))
+        changes = {'unrest': new_unrest}
+        msg = f"📉 {country} reduced unrest by {total_reduction} (cost: {move['__cost']})"
+    
+    elif move_type == "propaganda_campaign":
+        stab_increase = amt * float(config["political_actions"]["propaganda_stability_increase"])
+        unrest_reduction = amt * float(config["political_actions"]["propaganda_unrest_reduction"])
+        new_stability = min(100, stability + stab_increase)
+        new_unrest = max(0, unrest - unrest_reduction)
+        cursor.execute("UPDATE countries SET stability = ?, unrest = ? WHERE code = ?", 
+                      (new_stability, new_unrest, country))
+        changes = {'stability': new_stability, 'unrest': new_unrest}
+        msg = f"📢 {country} propaganda: stability +{stab_increase}, unrest -{unrest_reduction} (cost: {move['__cost']})"
+    
+    elif move_type == "war_effort":
+        reduction = amt * float(config["political_actions"]["war_effort_exhaustion_reduction"])
+        new_war_exhaustion = max(0, war_exhaustion - reduction)
+        cursor.execute("UPDATE countries SET war_exhaustion = ? WHERE code = ?", (new_war_exhaustion, country))
+        changes = {'war_exhaustion': new_war_exhaustion}
+        msg = f"💪 {country} war effort reduced exhaustion by {reduction} (cost: {move['__cost']})"
+    
+    return msg, changes
+
+
+def execute_move(cursor, move):
+    country = move["country_code"]
     cost = move["__cost"]
 
-    # Deduct treasury
-    cursor.execute("""
-        UPDATE country_economy
-        SET treasury = treasury - ?
-        WHERE country_code = ?
-    """, (cost, country))
+    # Deduct treasury (for all moves that have a cost)
+    if cost > 0:
+        cursor.execute("""
+            UPDATE country_economy
+            SET treasury = treasury - ?
+            WHERE country_code = ?
+        """, (cost, country))
+
+    # POLITICAL MOVES
+    political_moves = ["declare_war", "make_peace", "anti_corruption", 
+                      "stabilize", "reduce_unrest", "propaganda_campaign", "war_effort"]
+    
+    if move["move_type"] in political_moves:
+        msg, changes = execute_political_move(cursor, move)
+        return msg
 
     # BUILDINGS
     if move["move_type"] == "build":
@@ -121,9 +292,9 @@ def execute_move(cursor, move):
             VALUES (?, ?, ?)
             ON CONFLICT(province_id, building_type_id)
             DO UPDATE SET amount = amount + excluded.amount
-        """, (move["target_province_id"], move["target_building_type_id"], amt))
+        """, (move["target_province_id"], move["target_building_type_id"], move["amount"]))
 
-        return f"✅ {country} built {amt}x building {move['target_building_type_id']} (cost {cost})"
+        return f"✅ {country} built {move['amount']}x building {move['target_building_type_id']} (cost {cost})"
 
     # UNITS
     if move["move_type"] == "recruit":
@@ -132,9 +303,9 @@ def execute_move(cursor, move):
             VALUES (?, ?, ?)
             ON CONFLICT(country_code, unit_type_id)
             DO UPDATE SET amount = amount + excluded.amount
-        """, (country, move["target_unit_type_id"], amt))
+        """, (country, move["target_unit_type_id"], move["amount"]))
 
-        return f"✅ {country} recruited {amt}x unit {move['target_unit_type_id']} (cost {cost})"
+        return f"✅ {country} recruited {move['amount']}x unit {move['target_unit_type_id']} (cost {cost})"
 
 
 # ================= MAIN PROCESSOR =================
