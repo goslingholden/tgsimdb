@@ -123,6 +123,7 @@ def validate_moves(cursor, moves):
     country correctly account for each other's costs.
     """
     approved = []
+    rejected = []
     treasuries = get_country_treasuries(cursor)
 
     for move in moves:
@@ -130,11 +131,15 @@ def validate_moves(cursor, moves):
         amt = move["amount"]
 
         if country not in treasuries:
-            log(f"❌ Move {move['id']}: {country} has no economy record, skipping.")
+            msg = f"{country} has no economy record, skipping."
+            log(f"❌ Move {move['id']}: {msg}")
+            rejected.append((move["id"], msg))
             continue
 
         if amt <= 0:
-            log(f"❌ Move {move['id']}: Invalid amount ({amt})")
+            msg = f"Invalid amount ({amt})"
+            log(f"❌ Move {move['id']}: {msg}")
+            rejected.append((move["id"], msg))
             continue
 
         # ===== POLITICAL MOVES =====
@@ -145,6 +150,7 @@ def validate_moves(cursor, moves):
             valid, msg = validate_political_move(cursor, move, treasuries)
             if not valid:
                 log(f"❌ Move {move['id']}: {msg}")
+                rejected.append((move["id"], msg))
                 continue
             approved.append(move)
             continue
@@ -152,11 +158,15 @@ def validate_moves(cursor, moves):
         # ===== EXISTING VALIDATION (build, recruit) =====
         if move["move_type"] == "build":
             if not province_owned_by(cursor, move["target_province_id"], country):
-                log(f"❌ Move {move['id']}: {country} does not own province {move['target_province_id']}")
+                msg = f"{country} does not own province {move['target_province_id']}"
+                log(f"❌ Move {move['id']}: {msg}")
+                rejected.append((move["id"], msg))
                 continue
 
             if not building_exists(cursor, move["target_building_type_id"]):
-                log(f"❌ Move {move['id']}: Invalid building id {move['target_building_type_id']}")
+                msg = f"Invalid building id {move['target_building_type_id']}"
+                log(f"❌ Move {move['id']}: {msg}")
+                rejected.append((move["id"], msg))
                 continue
 
             cursor.execute("SELECT base_cost FROM building_types WHERE id = ?", (move["target_building_type_id"],))
@@ -164,18 +174,24 @@ def validate_moves(cursor, moves):
 
         elif move["move_type"] == "recruit":
             if not unit_exists(cursor, move["target_unit_type_id"]):
-                log(f"❌ Move {move['id']}: Invalid unit id {move['target_unit_type_id']}")
+                msg = f"Invalid unit id {move['target_unit_type_id']}"
+                log(f"❌ Move {move['id']}: {msg}")
+                rejected.append((move["id"], msg))
                 continue
 
             cursor.execute("SELECT recruitment_cost FROM unit_types WHERE id = ?", (move["target_unit_type_id"],))
             cost = cursor.fetchone()[0] * amt
 
         else:
-            log(f"❌ Move {move['id']}: Unknown move type '{move['move_type']}'")
+            msg = f"Unknown move type '{move['move_type']}'"
+            log(f"❌ Move {move['id']}: {msg}")
+            rejected.append((move["id"], msg))
             continue
 
         if treasuries[country] < cost:
-            log(f"❌ Move {move['id']}: {country} cannot afford {move['move_type']} (needs {cost}, has {treasuries[country]})")
+            msg = f"{country} cannot afford {move['move_type']} (needs {cost}, has {treasuries[country]})"
+            log(f"❌ Move {move['id']}: {msg}")
+            rejected.append((move["id"], msg))
             continue
 
         # Reserve cost in the snapshot so later moves from the same country
@@ -184,7 +200,7 @@ def validate_moves(cursor, moves):
         move["__cost"] = cost
         approved.append(move)
 
-    return approved
+    return approved, rejected
 
 
 # ================= EXECUTION PHASE =================
@@ -209,7 +225,7 @@ def execute_political_move(cursor, move):
     
     if move_type == "declare_war":
         cursor.execute("UPDATE countries SET at_war = 1 WHERE code = ?", (country,))
-        changes = {'at_war': 0, 'war_exhaustion': war_exhaustion}
+        changes = {'at_war': 1, 'war_exhaustion': war_exhaustion}
         msg = f"⚔ {country} declared war!"
     
     elif move_type == "make_peace":
@@ -345,14 +361,16 @@ def process_moves():
 
     # ===== VALIDATION PASS =====
     if BATCH_VALIDATE:
-        approved_moves = validate_moves(cursor, moves)
-        log(f"\nApproved {len(approved_moves)} moves, rejected {len(moves) - len(approved_moves)}")
+        approved_moves, rejected_moves = validate_moves(cursor, moves)
+        log(f"\nApproved {len(approved_moves)} moves, rejected {len(rejected_moves)}")
     else:
         # Validate each move independently without shared treasury tracking
         approved_moves = []
+        rejected_moves = []
         for move in moves:
-            result = validate_moves(cursor, [move])
-            approved_moves.extend(result)
+            approved, rejected = validate_moves(cursor, [move])
+            approved_moves.extend(approved)
+            rejected_moves.extend(rejected)
         log(f"\nApproved {len(approved_moves)} moves (individual validation mode)")
 
     try:
@@ -364,8 +382,15 @@ def process_moves():
             log(msg)
             cursor.execute("UPDATE player_moves SET processed = 1 WHERE id = ?", (move["id"],))
 
+        for move_id, error_msg in rejected_moves:
+            cursor.execute("""
+                UPDATE player_moves
+                SET processed = 1, error_message = ?
+                WHERE id = ?
+            """, (error_msg, move_id))
+
         conn.commit()
-        print(f"\n✅ EXECUTED {len(approved_moves)} MOVES\n")
+        print(f"\n✅ EXECUTED {len(approved_moves)} MOVES | REJECTED {len(rejected_moves)} MOVES\n")
 
     except Exception as e:
         conn.rollback()

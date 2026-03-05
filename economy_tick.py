@@ -105,12 +105,13 @@ def calculate_political_modifiers(cursor, country_code):
     tax_efficiency_mod = max(tax_eff_min, tax_efficiency_mod)  # Cap minimum from config
     stability_change -= unrest * float(config["politics"]["unrest_stability_drain"])
     
-    if unrest > float(config["politics"]["unrest_high_threshold"]):
-        pop_loss = int((unrest - 70) * float(config["politics"]["unrest_population_loss_factor"]))
+    unrest_high_threshold = float(config["politics"]["unrest_high_threshold"])
+    if unrest > unrest_high_threshold:
+        pop_loss = int((unrest - unrest_high_threshold) * float(config["politics"]["unrest_population_loss_factor"]))
         population_change -= pop_loss
     
     # Corruption effects
-    corruption_change = corruption * 0.01  # Natural decay
+    corruption_change = -corruption * 0.01  # Natural decay
     if at_war:
         corruption_change += float(config["politics"]["corruption_war_increase"])
     
@@ -125,13 +126,13 @@ def calculate_political_modifiers(cursor, country_code):
         military_upkeep_mod *= (1 + war_exhaustion * 0.003)
     
     # War exhaustion effects (applied even if not at war)
-    if war_exhaustion > 0:
+    if war_exhaustion > 0 and not at_war:
         tax_efficiency_mod -= war_exhaustion * 0.001
         unrest_change += war_exhaustion * 0.1
         stability_change -= war_exhaustion * 0.05
     
     return {
-        'tax_efficiency_mod': max(0.1, tax_efficiency_mod),
+        'tax_efficiency_mod': max(tax_eff_min, tax_efficiency_mod),
         'admin_cost_mod': admin_cost_mod,
         'military_upkeep_mod': military_upkeep_mod,
         'unrest_change': unrest_change,
@@ -278,20 +279,64 @@ def get_building_economy(cursor, country):
 def get_resource_production(cursor, country):
     """Calculate resource production for a country.
     
-    Returns a dictionary mapping resource_id to production amount.
-    Each resource type produces RESOURCE_PRODUCTION amount per turn.
+    Returns a dictionary mapping produced resource_id to production amount.
+    Production is based on owned provinces and each province contributes
+    RESOURCE_PRODUCTION units of its own resource.
     """
     config = configparser.ConfigParser()
     config.read("config.ini")
     
     production_per_resource = int(config["resources"]["resource_production"])
-    
-    # Get all resource IDs from the resources table
-    cursor.execute("SELECT id FROM resources")
-    resources = cursor.fetchall()
-    
-    # Return same production amount for each resource type
-    return {rid[0]: production_per_resource for rid in resources}
+
+    cursor.execute("""
+        SELECT p.resource_id, COUNT(*) AS province_count
+        FROM provinces p
+        WHERE p.owner_country_code = ?
+          AND p.resource_id IS NOT NULL
+        GROUP BY p.resource_id
+    """, (country,))
+
+    return {
+        resource_id: province_count * production_per_resource
+        for resource_id, province_count in cursor.fetchall()
+    }
+
+
+def ensure_country_resource_rows(cursor):
+    """Ensure country_resources has one row per country/resource pair."""
+    cursor.execute("""
+        INSERT OR IGNORE INTO country_resources (country_code, resource_id, stockpile)
+        SELECT c.code, r.id, 0
+        FROM countries c
+        CROSS JOIN resources r
+    """)
+
+
+def apply_resource_production(cursor, country, production, resource_cap):
+    """Apply production to stockpile, respecting total cap per country."""
+    cursor.execute("""
+        SELECT COALESCE(SUM(stockpile), 0)
+        FROM country_resources
+        WHERE country_code = ?
+    """, (country,))
+    current_total = cursor.fetchone()[0] or 0
+    remaining_capacity = max(0, resource_cap - current_total)
+
+    actually_added = {}
+    for resource_id, amount in sorted(production.items()):
+        if remaining_capacity <= 0:
+            actually_added[resource_id] = 0
+            continue
+        add_amount = min(amount, remaining_capacity)
+        cursor.execute("""
+            UPDATE country_resources
+            SET stockpile = stockpile + ?
+            WHERE country_code = ? AND resource_id = ?
+        """, (add_amount, country, resource_id))
+        actually_added[resource_id] = add_amount
+        remaining_capacity -= add_amount
+
+    return actually_added
 
 # ================== ECONOMY TICK ==================
 
@@ -301,9 +346,14 @@ def economy_tick():
     cursor = conn.cursor()
     
     validate_schema(cursor)
+    if not validate_political_data(cursor):
+        conn.close()
+        return
+    ensure_country_resource_rows(cursor)
     
     cursor.execute("SELECT code FROM countries")
     countries = [c[0] for c in cursor.fetchall()]
+    resource_names = {rid: name for rid, name in cursor.execute("SELECT id, name FROM resources").fetchall()}
     
     print("\n=== ECONOMY TICK START ===")
     
@@ -389,12 +439,13 @@ def economy_tick():
         old_war_exhaustion = political_mods['war_exhaustion']
         
         # Load bounds from config
-        pop_min, pop_max = map(float, config["bounds"]["population_bounds"].split(','))
+        stability_min, stability_max = map(float, config["bounds"].get("stability_bounds", "0,100").split(','))
+        unrest_min, unrest_max = map(float, config["bounds"].get("unrest_bounds", "0,100").split(','))
         corr_min, corr_max = map(float, config["bounds"]["corruption_bounds"].split(','))
         war_min, war_max = map(float, config["bounds"]["war_exhaustion_bounds"].split(','))
         
-        new_stability = max(pop_min, min(pop_max, old_stability + political_mods['stability_change']))
-        new_unrest = max(pop_min, min(pop_max, old_unrest + political_mods['unrest_change']))
+        new_stability = max(stability_min, min(stability_max, old_stability + political_mods['stability_change']))
+        new_unrest = max(unrest_min, min(unrest_max, old_unrest + political_mods['unrest_change']))
         new_corruption = max(corr_min, min(corr_max, old_corruption + political_mods['corruption_change']))
         new_war_exhaustion = max(war_min, min(war_max, old_war_exhaustion + political_mods['war_exhaustion_change']))
         
@@ -402,7 +453,8 @@ def economy_tick():
         update_province_populations(cursor, country, political_mods['population_change'])
         
         # --- Update country economy ---
-        new_total_population = population + political_mods['population_change']
+        cursor.execute("SELECT COALESCE(SUM(population), 0) FROM provinces WHERE owner_country_code = ?", (country,))
+        new_total_population = cursor.fetchone()[0] or 0
         cursor.execute("""
             UPDATE country_economy SET
                 treasury = ?,
@@ -439,6 +491,18 @@ def economy_tick():
                 war_exhaustion = ?
             WHERE code = ?
         """, (new_stability, new_unrest, new_corruption, new_war_exhaustion, country))
+
+        # --- Update resources ---
+        production = get_resource_production(cursor, country)
+        resource_cap = provinces * RESOURCE_CAP_PER_PROVINCE
+        actually_added = apply_resource_production(cursor, country, production, resource_cap)
+        stockpile = cursor.execute("""
+            SELECT r.name, cr.stockpile
+            FROM country_resources cr
+            JOIN resources r ON cr.resource_id = r.id
+            WHERE cr.country_code = ?
+            ORDER BY r.name
+        """, (country,)).fetchall()
         
         # --- Debug output ---
         print(f"\n{country}")
@@ -451,6 +515,12 @@ def economy_tick():
         print(f" Income: Tax {int(tax_income_after_corruption)} | Buildings {int(building_income)} | Growth {growth_amount}")
         print(f" Expenses: Admin {int(administration_cost)} | Military {int(military_upkeep)} | Buildings {int(building_upkeep)}")
         print(f" Treasury: {treasury} → {new_treasury}")
+        if production:
+            print(" Resource Production:")
+            for resource_id, amount in sorted(production.items()):
+                resource_name = resource_names.get(resource_id, f"ID_{resource_id}")
+                print(f"   +{actually_added.get(resource_id, 0)}/{amount} {resource_name}")
+        print(f" Resource Cap: {resource_cap} | Total Stockpile: {sum(s[1] for s in stockpile)}")
         print("--------------------------------------------------")
     
     conn.commit()

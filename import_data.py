@@ -1,6 +1,28 @@
-import sqlite3
 import csv
+import configparser
 from db_utils import get_connection
+from economy_tick import (
+    get_country_modifier,
+    get_building_country_modifier,
+    get_population,
+    get_province_count,
+    get_military_upkeep,
+    get_building_economy,
+    get_resource_production,
+    ensure_country_resource_rows,
+)
+
+# ---------------- LOAD CONFIG ----------------
+config = configparser.ConfigParser()
+config.read("config.ini")
+
+BASE_TAX_PER_POP = float(config["economy"]["base_tax_per_pop"])
+ADMIN_COST_PER_PROVINCE = float(config["economy"]["admin_cost_per_province"])
+
+RESOURCE_CAP_PER_PROVINCE = int(config["resources"]["resource_cap_per_province"])
+
+POP_PER_UNIT = int(config["military"]["pop_per_unit"])
+BASE_UNIT_RATIO = float(config["military"]["base_unit_ratio"])
 
 # -------------------- COUNTRIES --------------------
 def import_countries(cursor):
@@ -233,7 +255,7 @@ def import_country_modifiers(cursor):
                 """, (
                     row["country_code"],
                     row.get("modifier_key", ""),
-                    float(row.get("value", 1.0) or 1.0)
+                    float(row.get("value", 0.0) or 0.0)
                 ))
 
 # -------------------- RESOURCES --------------------
@@ -248,6 +270,146 @@ def import_resources(cursor):
                 row["name"],
                 row.get("description", "")
             ))
+
+
+def validate_schema(cursor):
+    required_tables = [
+        "countries", "provinces", "country_economy",
+        "building_types", "province_buildings", "building_effects",
+        "country_modifiers", "unit_types", "country_units",
+        "resources", "country_resources"
+    ]
+
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    existing = {row[0] for row in cursor.fetchall()}
+
+    missing = [t for t in required_tables if t not in existing]
+    if missing:
+        raise RuntimeError(f"Missing required tables: {missing}")
+
+
+def apply_country_building_effects(cursor):
+    cursor.execute("""
+        SELECT
+            p.owner_country_code,
+            be.modifier_key,
+            SUM(be.value * pb.amount) AS total_effect
+        FROM province_buildings pb
+        JOIN provinces p ON p.id = pb.province_id
+        JOIN building_effects be ON be.building_type_id = pb.building_type_id
+        WHERE p.owner_country_code IS NOT NULL
+          AND be.scope = 'country'
+        GROUP BY p.owner_country_code, be.modifier_key
+    """)
+    rows = cursor.fetchall()
+
+    for country_code, modifier_key, total_effect in rows:
+        cursor.execute("""
+            INSERT INTO country_modifiers (country_code, modifier_key, value)
+            VALUES (?, ?, ?)
+            ON CONFLICT(country_code, modifier_key)
+            DO UPDATE SET value = excluded.value
+        """, (country_code, modifier_key, float(total_effect or 0.0)))
+
+    print("✅ Country-level building effects processed.")
+
+
+def import_economy_snapshot(cursor):
+    validate_schema(cursor)
+    ensure_country_resource_rows(cursor)
+
+    cursor.execute("SELECT code FROM countries")
+    countries = [c[0] for c in cursor.fetchall()]
+
+    print("\n=== IMPORT ECONOMY START ===")
+
+    for country in countries:
+        cursor.execute("SELECT treasury, tax_rate FROM country_economy WHERE country_code = ?", (country,))
+        row = cursor.fetchone()
+        if not row:
+            print(f"⚠ No economy row for {country}")
+            continue
+
+        _, tax_rate = row
+
+        population = get_population(cursor, country)
+        provinces = get_province_count(cursor, country)
+
+        tax_eff = get_country_modifier(cursor, country, "tax_efficiency") * \
+                  get_building_country_modifier(cursor, country, "tax_efficiency") * \
+                  get_country_modifier(cursor, country, "building_tax_efficiency")
+
+        admin_mod = get_country_modifier(cursor, country, "admin_cost_modifier") * \
+                    get_building_country_modifier(cursor, country, "admin_cost_modifier") * \
+                    get_country_modifier(cursor, country, "building_admin_efficiency")
+
+        unit_limit_mod = get_country_modifier(cursor, country, "unit_limit_modifier") * \
+                         get_building_country_modifier(cursor, country, "unit_limit_modifier") * \
+                         get_country_modifier(cursor, country, "building_military_unit_limit_mult")
+
+        upkeep_mod = get_country_modifier(cursor, country, "military_upkeep_modifier") * \
+                     get_building_country_modifier(cursor, country, "military_upkeep_modifier")
+
+        building_income_mult = get_building_country_modifier(cursor, country, "building_income_mult") * \
+                               get_country_modifier(cursor, country, "building_production_efficiency")
+
+        base_tax = population * BASE_TAX_PER_POP
+        tax_income = base_tax * tax_rate * tax_eff
+
+        administration_cost = provinces * ADMIN_COST_PER_PROVINCE * admin_mod
+
+        base_upkeep = get_military_upkeep(cursor, country)
+        military_upkeep = base_upkeep * upkeep_mod
+
+        building_income_raw, building_upkeep = get_building_economy(cursor, country)
+        building_income = building_income_raw * building_income_mult
+
+        unit_limit = int((population * BASE_UNIT_RATIO * unit_limit_mod) / POP_PER_UNIT + 5)
+        total_units = cursor.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM country_units WHERE country_code = ?",
+            (country,)
+        ).fetchone()[0]
+
+        production = get_resource_production(cursor, country)
+        resource_cap = provinces * RESOURCE_CAP_PER_PROVINCE
+        stockpile_total = cursor.execute(
+            "SELECT COALESCE(SUM(stockpile), 0) FROM country_resources WHERE country_code = ?",
+            (country,)
+        ).fetchone()[0] or 0
+
+        total_income = int(tax_income + building_income)
+        total_expenses = int(administration_cost + military_upkeep + building_upkeep)
+
+        cursor.execute("""
+            UPDATE country_economy SET
+                tax_income = ?,
+                building_income = ?,
+                total_income = ?,
+                administration_cost = ?,
+                military_upkeep = ?,
+                building_upkeep = ?,
+                total_expenses = ?,
+                total_population = ?
+            WHERE country_code = ?
+        """, (
+            int(tax_income),
+            int(building_income),
+            total_income,
+            int(administration_cost),
+            int(military_upkeep),
+            int(building_upkeep),
+            total_expenses,
+            population,
+            country
+        ))
+
+        print(
+            f"{country}: pop={population}, prov={provinces}, units={total_units}/{unit_limit}, "
+            f"income={total_income}, expenses={total_expenses}, "
+            f"resource_cap={resource_cap}, stockpile={stockpile_total}, produced={sum(production.values())}"
+        )
+
+    print("✅ IMPORT ECONOMY COMPLETE")
 
 # -------------------- MAIN --------------------
 def main():
@@ -269,9 +431,11 @@ def main():
         import_modifiers(cursor)
         import_building_effects(cursor)
         import_country_modifiers(cursor)
+        apply_country_building_effects(cursor)
+        import_economy_snapshot(cursor)
 
         conn.commit()
-        print("🌍 World data imported successfully.")
+        print("🌍 World data and economy snapshot imported successfully.")
 
     except Exception as e:
         conn.rollback()
