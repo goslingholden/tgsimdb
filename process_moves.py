@@ -7,7 +7,6 @@ config = configparser.ConfigParser()
 config.read("config.ini")
 
 MOVE_LOGGING = config.getboolean("moves", "logging", fallback=True)
-SIMULTANEOUS = config.getboolean("moves", "simultaneous_resolution", fallback=True)
 BATCH_VALIDATE = config.getboolean("moves", "batch_validation", fallback=True)
 
 # ================= UTILITIES =================
@@ -234,7 +233,7 @@ def execute_political_move(cursor, move):
         cursor.execute("""
             UPDATE countries SET at_war = 0, war_exhaustion = ? WHERE code = ?
         """, (new_war_exhaustion, country))
-        changes = {'at_war': 1, 'war_exhaustion': new_war_exhaustion}
+        changes = {'at_war': 0, 'war_exhaustion': new_war_exhaustion}
         msg = f"☮ {country} made peace (war exhaustion reduced by {reduction})"
     
     elif move_type == "anti_corruption":

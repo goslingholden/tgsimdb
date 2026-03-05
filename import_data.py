@@ -45,21 +45,6 @@ def import_countries(cursor):
                 int(row.get("war_exhaustion", 0))
             ))
 
-# -------------------- STATES --------------------
-def import_states(cursor):
-    with open("data/states.csv", newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            cursor.execute("""
-                INSERT OR IGNORE INTO states (name, food, stability, loyalty)
-                VALUES (?, ?, ?, ?)
-            """, (
-                row["name"],
-                int(row.get("food", 0)),
-                int(row.get("stability", 50)),
-                int(row.get("loyalty", 50))
-            ))
-
 # -------------------- PROVINCES --------------------
 def import_provinces(cursor):
     with open("data/provinces.csv", newline="", encoding="utf-8") as f:
@@ -90,19 +75,6 @@ def import_provinces(cursor):
                 row.get("terrain", "plains"),
                 resource_id
             ))
-
-# -------------------- STATE ↔ PROVINCE LINKS --------------------
-def import_state_links(cursor):
-    with open("data/state_provinces.csv", newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            cursor.execute("""
-                INSERT OR IGNORE INTO state_provinces (state_id, province_id)
-                VALUES (
-                    (SELECT id FROM states WHERE name = ?),
-                    (SELECT id FROM provinces WHERE name = ?)
-                )
-            """, (row["state_name"], row["province_name"]))
 
 # -------------- DEFAULT BUILDINGS -------------
 def import_building_types(cursor):
@@ -152,10 +124,13 @@ def import_country_economy(cursor):
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
-                INSERT OR IGNORE INTO country_economy (
+                INSERT INTO country_economy (
                     country_code, treasury, tax_rate
                 )
                 VALUES (?, ?, ?)
+                ON CONFLICT(country_code) DO UPDATE SET
+                    treasury = excluded.treasury,
+                    tax_rate = excluded.tax_rate
                 """, (
                     row["country_code"],
                     int(row.get("treasury", 0) or 0),
@@ -206,10 +181,13 @@ def import_modifiers(cursor):
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
-                INSERT OR IGNORE INTO modifiers (
+                INSERT INTO modifiers (
                     modifier_key, description, default_value
                 )
                 VALUES (?, ?, ?)
+                ON CONFLICT(modifier_key) DO UPDATE SET
+                    description = excluded.description,
+                    default_value = excluded.default_value
             """, (
                 row["modifier_key"],
                 row.get("description", ""),
@@ -230,17 +208,18 @@ def import_building_effects(cursor):
                 continue
             building_type_id = result[0]
 
+            scope = row.get("scope", "")
+            modifier_key = row.get("modifier_key", "")
+            value = float(row.get("value", 0.0) or 0.0)
+
             cursor.execute("""
-                INSERT OR IGNORE INTO building_effects (
+                INSERT INTO building_effects (
                     building_type_id, scope, modifier_key, value
                 )
                 VALUES (?, ?, ?, ?)
-            """, (
-                building_type_id,
-                row.get("scope", ""),
-                row.get("modifier_key", ""),
-                float(row.get("value", 0.0) or 0.0)
-            ))
+                ON CONFLICT(building_type_id, scope, modifier_key) DO UPDATE SET
+                    value = excluded.value
+            """, (building_type_id, scope, modifier_key, value))
 
 # --------------- COUNTRY MODIFIERS -----------------
 def import_country_modifiers(cursor):
@@ -248,10 +227,12 @@ def import_country_modifiers(cursor):
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
-                INSERT OR IGNORE INTO country_modifiers (
+                INSERT INTO country_modifiers (
                     country_code, modifier_key, value
                 )
                 VALUES (?, ?, ?)
+                ON CONFLICT(country_code, modifier_key) DO UPDATE SET
+                    value = excluded.value
                 """, (
                     row["country_code"],
                     row.get("modifier_key", ""),
@@ -288,32 +269,6 @@ def validate_schema(cursor):
         raise RuntimeError(f"Missing required tables: {missing}")
 
 
-def apply_country_building_effects(cursor):
-    cursor.execute("""
-        SELECT
-            p.owner_country_code,
-            be.modifier_key,
-            SUM(be.value * pb.amount) AS total_effect
-        FROM province_buildings pb
-        JOIN provinces p ON p.id = pb.province_id
-        JOIN building_effects be ON be.building_type_id = pb.building_type_id
-        WHERE p.owner_country_code IS NOT NULL
-          AND be.scope = 'country'
-        GROUP BY p.owner_country_code, be.modifier_key
-    """)
-    rows = cursor.fetchall()
-
-    for country_code, modifier_key, total_effect in rows:
-        cursor.execute("""
-            INSERT INTO country_modifiers (country_code, modifier_key, value)
-            VALUES (?, ?, ?)
-            ON CONFLICT(country_code, modifier_key)
-            DO UPDATE SET value = excluded.value
-        """, (country_code, modifier_key, float(total_effect or 0.0)))
-
-    print("✅ Country-level building effects processed.")
-
-
 def import_economy_snapshot(cursor):
     validate_schema(cursor)
     ensure_country_resource_rows(cursor)
@@ -336,22 +291,21 @@ def import_economy_snapshot(cursor):
         provinces = get_province_count(cursor, country)
 
         tax_eff = get_country_modifier(cursor, country, "tax_efficiency") * \
-                  get_building_country_modifier(cursor, country, "tax_efficiency") * \
-                  get_country_modifier(cursor, country, "building_tax_efficiency")
+                  get_building_country_modifier(cursor, country, "tax_efficiency")
 
         admin_mod = get_country_modifier(cursor, country, "admin_cost_modifier") * \
                     get_building_country_modifier(cursor, country, "admin_cost_modifier") * \
-                    get_country_modifier(cursor, country, "building_admin_efficiency")
+                    get_country_modifier(cursor, country, "admin_efficiency") * \
+                    get_building_country_modifier(cursor, country, "admin_efficiency")
 
-        unit_limit_mod = get_country_modifier(cursor, country, "unit_limit_modifier") * \
-                         get_building_country_modifier(cursor, country, "unit_limit_modifier") * \
-                         get_country_modifier(cursor, country, "building_military_unit_limit_mult")
+        unit_limit_mod = get_country_modifier(cursor, country, "military_unit_limit_mult") * \
+                         get_building_country_modifier(cursor, country, "military_unit_limit_mult")
 
         upkeep_mod = get_country_modifier(cursor, country, "military_upkeep_modifier") * \
                      get_building_country_modifier(cursor, country, "military_upkeep_modifier")
 
-        building_income_mult = get_building_country_modifier(cursor, country, "building_income_mult") * \
-                               get_country_modifier(cursor, country, "building_production_efficiency")
+        building_income_mult = get_country_modifier(cursor, country, "production_efficiency") * \
+                               get_building_country_modifier(cursor, country, "production_efficiency")
 
         base_tax = population * BASE_TAX_PER_POP
         tax_income = base_tax * tax_rate * tax_eff
@@ -419,10 +373,8 @@ def main():
 
     try:
         import_countries(cursor)
-        #import_states(cursor)
         import_resources(cursor)
         import_provinces(cursor)
-        #import_state_links(cursor)
         import_building_types(cursor)
         import_province_buildings(cursor)
         import_country_economy(cursor)
@@ -431,7 +383,6 @@ def main():
         import_modifiers(cursor)
         import_building_effects(cursor)
         import_country_modifiers(cursor)
-        apply_country_building_effects(cursor)
         import_economy_snapshot(cursor)
 
         conn.commit()

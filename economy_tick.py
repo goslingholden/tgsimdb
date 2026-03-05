@@ -215,20 +215,11 @@ def get_building_country_modifier(cursor, country, key):
         JOIN building_effects be ON pb.building_type_id = be.building_type_id
         JOIN provinces p ON pb.province_id = p.id
         WHERE p.owner_country_code = ?
-        AND be.scope = 'country'
+        AND be.scope IN ('country', 'province')
         AND be.modifier_key = ?
     """, (country, key))
 
     return 1 + (cursor.fetchone()[0] or 0.0)
-
-def get_building_modifier(cursor, country, key):
-    cursor.execute("""
-        SELECT value FROM country_modifiers 
-        WHERE country_code = ? AND modifier_key = ?
-    """, (country, key))
-    row = cursor.fetchone()
-    return row[0] if row else 0.0
-
 
 # ================== DEMOGRAPHICS ==================
 
@@ -391,9 +382,14 @@ def economy_tick():
         
         # --- Apply modifiers to existing calculations ---
         tax_eff = get_country_modifier(cursor, country, "tax_efficiency")
+        tax_eff *= get_building_country_modifier(cursor, country, "tax_efficiency")
         tax_eff *= political_mods['tax_efficiency_mod']
         
-        admin_mod = political_mods['admin_cost_mod']
+        admin_mod = get_country_modifier(cursor, country, "admin_cost_modifier")
+        admin_mod *= get_country_modifier(cursor, country, "admin_efficiency")
+        admin_mod *= get_building_country_modifier(cursor, country, "admin_cost_modifier")
+        admin_mod *= get_building_country_modifier(cursor, country, "admin_efficiency")
+        admin_mod *= political_mods['admin_cost_mod']
         
         upkeep_mod = get_country_modifier(cursor, country, "military_upkeep_modifier")
         upkeep_mod *= political_mods['military_upkeep_mod']
@@ -411,7 +407,8 @@ def economy_tick():
         military_upkeep = base_upkeep * upkeep_mod
         
         building_income_raw, building_upkeep = get_building_economy(cursor, country)
-        building_income_mult = get_building_country_modifier(cursor, country, "building_income_mult")
+        building_income_mult = get_country_modifier(cursor, country, "production_efficiency")
+        building_income_mult *= get_building_country_modifier(cursor, country, "production_efficiency")
         building_income = building_income_raw * building_income_mult
         
         # --- Economic growth calculation ---

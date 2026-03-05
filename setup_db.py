@@ -52,32 +52,6 @@ CREATE TABLE IF NOT EXISTS provinces (
 """)
 print("Provinces table created successfully.")
 
-## -------------------- STATES --------------------
-# print("Creating the states table...")
-# cursor.execute("""
-# CREATE TABLE IF NOT EXISTS states (
-#     id INTEGER PRIMARY KEY AUTOINCREMENT,
-#     name TEXT UNIQUE NOT NULL,
-#     food INTEGER NOT NULL DEFAULT 0,
-#     stability INTEGER NOT NULL DEFAULT 50,
-#     loyalty INTEGER NOT NULL DEFAULT 50
-# );
-# """)
-# print("States table created successfully.")
-
-# -------------------- STATE-PROVINCE LINK --------------------
-# print("Creating state_provinces table...")
-# cursor.execute("""
-# CREATE TABLE IF NOT EXISTS state_provinces (
-#     state_id INTEGER,
-#     province_id INTEGER,
-#     PRIMARY KEY (state_id, province_id),
-#     FOREIGN KEY (state_id) REFERENCES states(id),
-#     FOREIGN KEY (province_id) REFERENCES provinces(id)
-# );
-# """)
-# print("State_provinces table created successfully.")
-
 # -------------------- BUILDING TYPES --------------------
 print("Creating building_types table...")
 cursor.execute("""
