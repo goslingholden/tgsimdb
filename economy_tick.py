@@ -92,6 +92,9 @@ def calculate_political_modifiers(cursor, country_code):
     war_exhaustion_change = 0.0
     population_change = 0
     
+    # Load bounds from config
+    tax_eff_min = float(config["bounds"]["tax_efficiency_min"])
+    
     # Stability effects
     tax_efficiency_mod += (stability - 50) * 0.002
     unrest_change += (50 - stability) * 0.1
@@ -99,7 +102,7 @@ def calculate_political_modifiers(cursor, country_code):
     # Unrest effects
     admin_cost_mod += unrest * float(config["politics"]["unrest_admin_multiplier"])
     tax_efficiency_mod -= unrest * float(config["politics"]["unrest_tax_penalty"])
-    tax_efficiency_mod = max(0.5, tax_efficiency_mod)  # Cap minimum
+    tax_efficiency_mod = max(tax_eff_min, tax_efficiency_mod)  # Cap minimum from config
     stability_change -= unrest * float(config["politics"]["unrest_stability_drain"])
     
     if unrest > float(config["politics"]["unrest_high_threshold"]):
@@ -366,7 +369,7 @@ def economy_tick():
         growth_stability = (political_mods['stability'] - 50) * 0.0005
         growth_unrest = -political_mods['unrest'] * 0.0005
         growth_corruption = -political_mods['corruption'] * 0.02
-        growth_war = -0.015 if political_mods['at_war'] else 0
+        growth_war = float(config["politics"]["growth_war_factor"]) if political_mods['at_war'] else 0
         growth_buildings = building_income_raw * float(config["politics"]["growth_building_factor"])
         
         total_growth_rate = base_growth + growth_stability + growth_unrest + growth_corruption + growth_war + growth_buildings
@@ -385,10 +388,15 @@ def economy_tick():
         old_corruption = political_mods['corruption']
         old_war_exhaustion = political_mods['war_exhaustion']
         
-        new_stability = max(0, min(100, old_stability + political_mods['stability_change']))
-        new_unrest = max(0, min(100, old_unrest + political_mods['unrest_change']))
-        new_corruption = max(0.0, min(1.0, old_corruption + political_mods['corruption_change']))
-        new_war_exhaustion = max(0, min(100, old_war_exhaustion + political_mods['war_exhaustion_change']))
+        # Load bounds from config
+        pop_min, pop_max = map(float, config["bounds"]["population_bounds"].split(','))
+        corr_min, corr_max = map(float, config["bounds"]["corruption_bounds"].split(','))
+        war_min, war_max = map(float, config["bounds"]["war_exhaustion_bounds"].split(','))
+        
+        new_stability = max(pop_min, min(pop_max, old_stability + political_mods['stability_change']))
+        new_unrest = max(pop_min, min(pop_max, old_unrest + political_mods['unrest_change']))
+        new_corruption = max(corr_min, min(corr_max, old_corruption + political_mods['corruption_change']))
+        new_war_exhaustion = max(war_min, min(war_max, old_war_exhaustion + political_mods['war_exhaustion_change']))
         
         # --- Update province populations ---
         update_province_populations(cursor, country, political_mods['population_change'])
