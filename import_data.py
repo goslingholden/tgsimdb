@@ -30,14 +30,18 @@ def import_countries(cursor):
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
-                INSERT OR IGNORE INTO countries (code, name, culture, religion, stability, 
+                INSERT OR IGNORE INTO countries (code, name, capital, culture, 
+                    culture_group, religion, government, stability, 
                     unrest, corruption, at_war, war_exhaustion)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 row["code"],
                 row["name"],
+                row.get("capital", "Unknown"),
                 row.get("culture", "Unknown"),
+                row.get("culture_group", "Unknown"),
                 row.get("religion", "Unknown"),
+                row.get("government", "Unknown"),
                 int(row.get("stability", 50)),
                 int(row.get("unrest", 0)),
                 float(row.get("corruption", 0.0)),

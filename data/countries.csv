@@ -1,3 +1,25 @@
-code,name,culture,religion,stability,unrest,corruption,at_war,war_exhaustion
-CAR,Cartagine,Cartaginesi,Punica,65,5,0.4,0,0
-MAG,Magna Grecia,Greci,Ellenica,80,5,0.2,0,0
+code,name,capital,culture,culture_group,religion,government,stability,unrest,corruption,at_war,war_exhaustion
+CAR,Cartagine,Cartagine,Cartaginesi,Levantini,Punica,republic,50,0,0,0,0
+SIR,Siracusa,Siracusa,Sicelioti,Ellenici,Ellenica,monarchy,50,0,0,0,0
+MAG,Magna Grecia,Taranto,Italioti,Ellenici,Ellenica,republic,50,0,0,0,0
+BRU,Bruzia,Cosenza,Bruzi,Italici,Italica,tribe,50,0,0,0,0
+LUC,Lucania,Paestum,Lucani,Italici,Italica,tribe,50,0,0,0,0
+MES,Messapia,Manduria,Messapi,Illiri,Ellenica,tribe,50,0,0,0,0
+PEU,Peucezia,Bari,Peucezi,Illiri,Ellenica,republic,50,0,0,0,0
+DAU,Daunia,Manfredonia,Dauni,Illiri,Ellenica,republic,50,0,0,0,0
+SAN,Sannio,Bojano,Sanniti,Italici,Italica,republic,50,0,0,0,0
+ROM,Roma,Roma,Romani,Italici,Italica,republic,50,0,0,0,0
+SAB,Sabinia,Teramo,Sabini,Italici,Italica,tribe,50,0,0,0,0
+PIC,Picenia,Piceno,Piceni,Italici,Italica,tribe,50,0,0,0,0
+UMB,Umbria,Spoleto,Umbri,Italici,Italica,republic,50,0,0,0,0
+ETR,Etruria,Bisenzio,Etruschi,Italici,Italica,republic,50,0,0,0,0
+SEN,Senoni,Senigallia,Senoni,Galli,Celtica,tribe,50,0,0,0,0
+BOI,Boi,Bologna,Boi,Galli,Celtica,tribe,50,0,0,0,0
+LIN,Lingoni,Ravenna,Lingoni,Galli,Celtica,tribe,50,0,0,0,0
+GEN,Genuatia,Genova,Liguri,Italici,Italica,tribe,50,0,0,0,0
+TAU,Taurinia,Torino,Taurini,Galli,Celtica,tribe,50,0,0,0,0
+SAL,Salassia,Aosta,Salassi,Galli,Celtica,tribe,50,0,0,0,0
+INS,Insubria,Milano,Insubri,Galli,Celtica,tribe,50,0,0,0,0
+CEN,Cenomania,Verona,Cenomani,Galli,Celtica,tribe,50,0,0,0,0
+RET,Retia,Chiusa,Reti,Italici,Italica,tribe,50,0,0,0,0
+VEN,Veneto,Altino,Veneti,Italici,Italica,tribe,50,0,0,0,0

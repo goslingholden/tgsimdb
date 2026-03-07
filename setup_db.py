@@ -10,8 +10,11 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS countries (
     code TEXT PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
+    capital TEXT NOT NULL DEFAULT 'Unknown',
     culture TEXT NOT NULL DEFAULT 'Unknown',
+    culture_group TEXT NOT NULL DEFAULT 'Unknown',
     religion TEXT NOT NULL DEFAULT 'Unknown',
+    government TEXT NOT NULL DEFAULT 'Unknown',
     stability INTEGER NOT NULL DEFAULT 50,
     unrest INTEGER NOT NULL DEFAULT 0,
     corruption REAL NOT NULL DEFAULT 0.0,
