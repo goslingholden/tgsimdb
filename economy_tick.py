@@ -1,5 +1,6 @@
 from db_utils import get_connection
 import configparser
+import math
 
 # ---------------- LOAD CONFIG ----------------
 config = configparser.ConfigParser()
@@ -10,6 +11,11 @@ ADMIN_COST_PER_PROVINCE = float(config["economy"]["admin_cost_per_province"])
 
 RESOURCE_PRODUCTION = int(config["resources"]["resource_production"])
 RESOURCE_CAP_PER_PROVINCE = int(config["resources"]["resource_cap_per_province"])
+
+FOOD_PER_1000_POP = float(config["food"]["food_per_1000_pop"])
+FOOD_RESOURCE_NAMES = [name.strip() for name in config["food"]["food_resource_names"].split(",") if name.strip()]
+FOOD_SHORTAGE_TAX_PENALTY_MAX = float(config["food"]["food_shortage_tax_penalty_max"])
+FOOD_SHORTAGE_UNREST_INCREASE_MAX = float(config["food"]["food_shortage_unrest_increase_max"])
 
 POP_PER_UNIT = int(config["military"]["pop_per_unit"])
 BASE_UNIT_RATIO = float(config["military"]["base_unit_ratio"])
@@ -154,9 +160,13 @@ def calculate_population_growth(population, stability, unrest, corruption):
     config.read("config.ini")
     
     base_growth_rate = float(config["population"]["base_growth_rate"])
-    stability_bonus = (stability - 50) * 0.0005
-    unrest_penalty = -unrest * 0.001
-    corruption_penalty = -corruption * 0.01
+    stability_factor = float(config["population"]["stability_growth_factor"])
+    unrest_factor = float(config["population"]["unrest_growth_factor"])
+    corruption_factor = float(config["population"]["corruption_growth_factor"])
+
+    stability_bonus = (stability - 50) * stability_factor
+    unrest_penalty = -unrest * unrest_factor
+    corruption_penalty = -corruption * corruption_factor
     
     total_growth_rate = base_growth_rate + stability_bonus + unrest_penalty + corruption_penalty
     total_growth_rate = max(0.0, total_growth_rate)
@@ -329,6 +339,76 @@ def apply_resource_production(cursor, country, production, resource_cap):
 
     return actually_added
 
+
+def get_resource_ids_by_name(cursor, resource_names):
+    """Resolve resource names to ids, preserving requested order."""
+    if not resource_names:
+        return []
+    placeholders = ",".join("?" for _ in resource_names)
+    cursor.execute(
+        f"SELECT id, name FROM resources WHERE name IN ({placeholders})",
+        tuple(resource_names)
+    )
+    name_to_id = {name: rid for rid, name in cursor.fetchall()}
+    return [name_to_id[name] for name in resource_names if name in name_to_id]
+
+
+def consume_food_resources(cursor, country, population, food_resource_ids):
+    """Consume food stockpiles for the year and return shortage metrics."""
+    required_food = max(0, math.ceil((population / 1000) * FOOD_PER_1000_POP))
+    if required_food == 0 or not food_resource_ids:
+        return {
+            "required": required_food,
+            "consumed": 0,
+            "shortage": required_food,
+            "shortage_ratio": 1.0 if required_food > 0 else 0.0,
+            "consumed_by_resource": {}
+        }
+
+    placeholders = ",".join("?" for _ in food_resource_ids)
+    cursor.execute(
+        f"""
+        SELECT resource_id, stockpile
+        FROM country_resources
+        WHERE country_code = ?
+          AND resource_id IN ({placeholders})
+        ORDER BY resource_id
+        """,
+        (country, *food_resource_ids)
+    )
+    rows = cursor.fetchall()
+
+    remaining_need = required_food
+    consumed_by_resource = {}
+
+    for resource_id, stockpile in rows:
+        if remaining_need <= 0:
+            break
+        consumed = min(stockpile, remaining_need)
+        if consumed > 0:
+            cursor.execute(
+                """
+                UPDATE country_resources
+                SET stockpile = stockpile - ?
+                WHERE country_code = ? AND resource_id = ?
+                """,
+                (consumed, country, resource_id)
+            )
+            consumed_by_resource[resource_id] = consumed
+            remaining_need -= consumed
+
+    consumed_total = required_food - remaining_need
+    shortage = max(0, remaining_need)
+    shortage_ratio = (shortage / required_food) if required_food > 0 else 0.0
+
+    return {
+        "required": required_food,
+        "consumed": consumed_total,
+        "shortage": shortage,
+        "shortage_ratio": shortage_ratio,
+        "consumed_by_resource": consumed_by_resource
+    }
+
 # ================== ECONOMY TICK ==================
 
 def economy_tick():
@@ -345,6 +425,7 @@ def economy_tick():
     cursor.execute("SELECT code FROM countries")
     countries = [c[0] for c in cursor.fetchall()]
     resource_names = {rid: name for rid, name in cursor.execute("SELECT id, name FROM resources").fetchall()}
+    food_resource_ids = get_resource_ids_by_name(cursor, FOOD_RESOURCE_NAMES)
     
     print("\n=== ECONOMY TICK START ===")
     
@@ -379,6 +460,16 @@ def economy_tick():
             political_mods['corruption']
         )
         political_mods['population_change'] += pop_growth
+
+        # --- Produce and consume resources before final economy math ---
+        production = get_resource_production(cursor, country)
+        resource_cap = provinces * RESOURCE_CAP_PER_PROVINCE
+        actually_added = apply_resource_production(cursor, country, production, resource_cap)
+        food_result = consume_food_resources(cursor, country, population, food_resource_ids)
+        food_shortage_ratio = food_result["shortage_ratio"]
+        food_tax_multiplier = max(0.0, 1.0 - (food_shortage_ratio * FOOD_SHORTAGE_TAX_PENALTY_MAX))
+        food_unrest_increase = food_shortage_ratio * FOOD_SHORTAGE_UNREST_INCREASE_MAX
+        political_mods['unrest_change'] += food_unrest_increase
         
         # --- Apply modifiers to existing calculations ---
         tax_eff = get_country_modifier(cursor, country, "tax_efficiency")
@@ -400,6 +491,7 @@ def economy_tick():
         
         # Apply corruption tax loss using raw corruption value
         tax_income_after_corruption = tax_income * (1 - political_mods['corruption'] * 0.5)
+        tax_income_after_corruption *= food_tax_multiplier
         
         administration_cost = provinces * float(config["economy"]["admin_cost_per_province"]) * admin_mod
         
@@ -413,16 +505,17 @@ def economy_tick():
         
         # --- Economic growth calculation ---
         base_growth = float(config["politics"]["base_economic_growth"])
-        growth_stability = (political_mods['stability'] - 50) * 0.0005
-        growth_unrest = -political_mods['unrest'] * 0.0005
-        growth_corruption = -political_mods['corruption'] * 0.02
+        growth_stability = (political_mods['stability'] - 50) * float(config["politics"]["economic_growth_stability_factor"])
+        growth_unrest = -political_mods['unrest'] * float(config["politics"]["economic_growth_unrest_factor"])
+        growth_corruption = -political_mods['corruption'] * float(config["politics"]["economic_growth_corruption_factor"])
         growth_war = float(config["politics"]["growth_war_factor"]) if political_mods['at_war'] else 0
         growth_buildings = building_income_raw * float(config["politics"]["growth_building_factor"])
         
         total_growth_rate = base_growth + growth_stability + growth_unrest + growth_corruption + growth_war + growth_buildings
         total_growth_rate = max(0.0, total_growth_rate)
         
-        growth_amount = int(treasury * total_growth_rate)
+        productive_income_base = max(0, tax_income_after_corruption + building_income)
+        growth_amount = int(productive_income_base * total_growth_rate)
         
         # --- Calculate totals including growth as income ---
         total_income = int(tax_income_after_corruption + building_income + growth_amount)
@@ -489,10 +582,6 @@ def economy_tick():
             WHERE code = ?
         """, (new_stability, new_unrest, new_corruption, new_war_exhaustion, country))
 
-        # --- Update resources ---
-        production = get_resource_production(cursor, country)
-        resource_cap = provinces * RESOURCE_CAP_PER_PROVINCE
-        actually_added = apply_resource_production(cursor, country, production, resource_cap)
         stockpile = cursor.execute("""
             SELECT r.name, cr.stockpile
             FROM country_resources cr
@@ -509,6 +598,7 @@ def economy_tick():
         print(f" Corruption: {old_corruption:.3f} → {new_corruption:.3f} (change: {political_mods['corruption_change']:.3f})")
         print(f" War Exhaustion: {old_war_exhaustion:.1f} → {new_war_exhaustion:.1f} (change: {political_mods['war_exhaustion_change']:.2f})")
         print(f" Tax Eff: {tax_eff:.3f} (political mod: {political_mods['tax_efficiency_mod']:.3f})")
+        print(f" Food: consumed {food_result['consumed']}/{food_result['required']} | shortage {food_result['shortage']} | tax x{food_tax_multiplier:.3f}")
         print(f" Income: Tax {int(tax_income_after_corruption)} | Buildings {int(building_income)} | Growth {growth_amount}")
         print(f" Expenses: Admin {int(administration_cost)} | Military {int(military_upkeep)} | Buildings {int(building_upkeep)}")
         print(f" Treasury: {treasury} → {new_treasury}")
