@@ -1,8 +1,19 @@
 unit_name,resource_name,amount_per_unit
-Fanteria,iron,1
-Fanteria,cloth,1
-Cavalleria,iron,1
-Cavalleria,horses,1
-Cavalleria,cloth,1
-Milizia,cloth,1
-Milizia,wood,1
+Arcieri,base_metals,1
+Arcieri,wood,2
+Arcieri a cavallo,horses,1
+Arcieri a cavallo,base_metals,2
+Arcieri a cavallo,wood,3
+Fanteria leggera,base_metals,1
+Fanteria leggera,cloth,2
+Fanteria pesante,base_metals,2
+Fanteria pesante,cloth,3
+Fanteria pesante,iron,1
+Cavalleria leggera,horses,1
+Cavalleria leggera,base_metals,2
+Cavalleria pesante,horses,2
+Cavalleria pesante,iron,2
+Cavalleria pesante,cloth,3
+Elefanti da guerra,elephants,1
+Elefanti da guerra,iron,3
+Elefanti da guerra,cloth,4

@@ -1,9 +1,21 @@
 name,building_type,base_cost,base_tax_income,base_production,base_upkeep,description
-Fattoria,farm,100,10,10,5,Produzione
-Mercato,market,300,30,0,15,Commercio
-Officina,workshop,500,0,50,25,Produzione
-Falegnameria,lumber_mill,200,15,15,10,Produzione
-Caserma,barracks,500,0,0,50,Amministrazione
-Municipio,town_hall,600,10,0,30,Amministrazione
-Tempio,temple,150,15,0,5,Amministrazione
-Miniera,mine,400,30,10,20,Produzione
+Fortezza,fort,150,0,0,30,+3 DEF quando si combatte qui
+Porto,port,150,15,0,30,+5 limite unità di mare
+Caserma,barracks,100,0,0,20,+2 limite unità di terra
+Campo di addestramento,training_camp,200,0,0,40,+5 disciplina
+Fattoria,farm,100,0,20,10,+1 livestock +1 grain
+Granaio,granary,200,0,0,40,+50 limite risorse
+Magazzino,warehouse,350,0,0,70,+100 limite risorse
+Mercato,marketplace,100,30,0,20,+1% economic_growth
+Tenuta di schiavi,slave_estate,200,30,30,40,+1 slaves
+Foro,forum,300,50,50,70,+5% economic_growth
+Miniera,mine,150,0,30,15,+1 base_metals
+Fonderia,foundry,300,0,60,30,+2 base_metals +1 iron
+Cava,quarry,200,0,40,20,+3 stone
+Segheria,lumbermill,200,0,40,20,+3 wood
+Sartoria,tailor,200,0,40,20,+3 cloth
+Insediamento rurale,rural_settlement,250,0,50,25,+1 wine +1 honey +1 olives
+Tempio,temple,200,60,0,40,conversione locale
+Amministrazione,tax_office,400,120,0,80,assimilazione locale
+Tribunale,tribunal,300,80,0,60,+1 stability
+Teatro,theater,300,80,0,60,-1 unrest

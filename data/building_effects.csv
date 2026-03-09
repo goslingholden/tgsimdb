@@ -1,5 +1,5 @@
 building_name,scope,modifier_key,value
-Falegnameria,province,production_efficiency,0.1
-Caserma,country,military_unit_limit_mult,0.05
-Municipio,country,admin_efficiency,0.05
-Tempio,province,tax_efficiency,0.03
+Fortezza,province,is_fort,1
+Porto,country,navy_upkeep_modifier,1.1
+Caserma,country,military_upkeep_modifier,1.1
+Campo di addestramento,country,discipline,5

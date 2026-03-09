@@ -9,5 +9,7 @@ corruption_reduction,corruption reduction,1
 pop_growth,Rate of pop growth per turn,1
 admin_cost_modifier,Administrative cost multiplier,1
 military_upkeep_modifier,Military upkeep multiplier,1
+navy_upkeep_modifier,Navy upkeep modifier,1
 corruption,Corruption level affecting tax collection,0
 economic_growth,Economic growth rate,0
+is_fort,Check for fort building in a province,0

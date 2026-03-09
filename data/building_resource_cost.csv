@@ -1,13 +1,51 @@
 building_name,resource_name,amount_per_unit
-Fattoria,wood,2
-Fattoria,stone,1
-Mercato,wood,4
-Mercato,stone,3
-Officina,wood,5
-Officina,stone,5
-Caserma,wood,6
+Fortezza,stone,12
+Fortezza,wood,10
+Fortezza,base_metals,4
+Porto,stone,6
+Porto,wood,8
 Caserma,stone,8
-Municipio,wood,5
-Municipio,stone,6
-Tempio,stone,4
+Caserma,wood,6
+Caserma,iron,1
+Campo di addestramento,stone,8
+Campo di addestramento,wood,6
+Campo di addestramento,iron,2
+Campo di addestramento,cloth,1
+Fattoria,wood,4
+Granaio,wood,8
+Granaio,stone,4
+Magazzino,wood,10
+Magazzino,stone,6
+Magazzino,base_metals,4
+Mercato,wood,4
+Mercato,stone,2
+Tenuta di schiavi,wood,6
+Tenuta di schiavi,stone,4
+Foro,wood,8
+Foro,stone,6
+Foro,marble,2
+Miniera,wood,4
+Miniera,stone,2
+Fonderia,wood,6
+Fonderia,stone,2
+Fonderia,base_metals,1
+Cava,wood,5
+Cava,base_metals,1
+Segheria,wood,5
+Segheria,base_metals,1
+Sartoria,wood,5
+Sartoria,base_metals,1
+Insediamento rurale,wood,6
+Insediamento rurale,stone,2
+Insediamento rurale,base_metals,1
+Tempio,stone,6
+Tempio,base_metals,2
 Tempio,marble,1
+Amministrazione,stone,8
+Amministrazione,base_metals,4
+Amministrazione,marble,2
+Tribunale,stone,8
+Tribunale,marble,2
+Tribunale,precious_metals,1
+Teatro,stone,8
+Teatro,marble,2

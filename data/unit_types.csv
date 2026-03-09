@@ -1,4 +1,8 @@
 name,recruitment_cost,upkeep_cost,attack,defense
-Fanteria,100,2,5,5
-Cavalleria,300,5,8,4
-Milizia,50,1,2,2
+Arcieri,80,3,5,3
+Arcieri a cavallo,160,6,8,3
+Fanteria leggera,100,3,5,5
+Fanteria pesante,160,6,7,7
+Cavalleria leggera,100,4,8,4
+Cavalleria pesante,180,7,12,4
+Elefanti da guerra,280,10,16,10

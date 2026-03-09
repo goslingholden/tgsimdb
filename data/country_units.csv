@@ -1,7 +1,25 @@
 country_code,unit_type,amount
-CAR,Fanteria,4
-CAR,Cavalleria,2
-CAR,Milizia,1
-MAG,Fanteria,3
-MAG,Cavalleria,1
-MAG,Milizia,1
+CAR,Fanteria leggera,53
+SIR,Fanteria leggera,14
+MAG,Fanteria leggera,22
+BRU,Fanteria leggera,8
+LUC,Fanteria leggera,9
+MES,Fanteria leggera,8
+PEU,Fanteria leggera,11
+DAU,Fanteria leggera,7
+SAN,Fanteria leggera,12
+ROM,Fanteria leggera,36
+SAB,Fanteria leggera,11
+PIC,Fanteria leggera,11
+UMB,Fanteria leggera,11
+ETR,Fanteria leggera,58
+SEN,Fanteria leggera,7
+BOI,Fanteria leggera,10
+LIN,Fanteria leggera,11
+GEN,Fanteria leggera,11
+TAU,Fanteria leggera,13
+SAL,Fanteria leggera,5
+INS,Fanteria leggera,13
+CEN,Fanteria leggera,8
+RET,Fanteria leggera,6
+VEN,Fanteria leggera,17
