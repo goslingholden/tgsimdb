@@ -20,6 +20,22 @@ def get_country_treasuries(cursor):
     cursor.execute("SELECT country_code, treasury FROM country_economy")
     return {c: t for c, t in cursor.fetchall()}
 
+def ensure_country_resource_rows(cursor):
+    cursor.execute("""
+        INSERT OR IGNORE INTO country_resources (country_code, resource_id, stockpile)
+        SELECT c.code, r.id, 0
+        FROM countries c
+        CROSS JOIN resources r
+    """)
+
+
+def get_country_resource_stockpiles(cursor):
+    cursor.execute("SELECT country_code, resource_id, stockpile FROM country_resources")
+    stockpiles = {}
+    for country_code, resource_id, stockpile in cursor.fetchall():
+        stockpiles.setdefault(country_code, {})[resource_id] = int(stockpile or 0)
+    return stockpiles
+
 
 def get_country_politics(cursor, country_code):
     """Get current political values for a country."""
@@ -56,6 +72,132 @@ def unit_exists(cursor, unit_type_id):
     cursor.execute("SELECT 1 FROM unit_types WHERE id = ?", (unit_type_id,))
     return cursor.fetchone() is not None
 
+def country_exists(cursor, country_code):
+    cursor.execute("SELECT 1 FROM countries WHERE code = ?", (country_code,))
+    return cursor.fetchone() is not None
+
+
+def resource_exists(cursor, resource_id):
+    cursor.execute("SELECT 1 FROM resources WHERE id = ?", (resource_id,))
+    return cursor.fetchone() is not None
+
+
+def get_resource_name(cursor, resource_id):
+    cursor.execute("SELECT name FROM resources WHERE id = ?", (resource_id,))
+    row = cursor.fetchone()
+    return row[0] if row else f"resource_{resource_id}"
+
+
+def get_building_resource_costs(cursor, building_type_id, amount):
+    cursor.execute("""
+        SELECT resource_id, amount_per_unit
+        FROM building_resource_costs
+        WHERE building_type_id = ?
+    """, (building_type_id,))
+    return {resource_id: per_unit * amount for resource_id, per_unit in cursor.fetchall()}
+
+
+def get_unit_resource_costs(cursor, unit_type_id, amount):
+    cursor.execute("""
+        SELECT resource_id, amount_per_unit
+        FROM unit_resource_costs
+        WHERE unit_type_id = ?
+    """, (unit_type_id,))
+    return {resource_id: per_unit * amount for resource_id, per_unit in cursor.fetchall()}
+
+
+def reserve_resource_costs(resource_stockpiles, country_code, resource_costs):
+    country_stock = resource_stockpiles.setdefault(country_code, {})
+    for resource_id, required in resource_costs.items():
+        country_stock[resource_id] = country_stock.get(resource_id, 0) - required
+
+
+def apply_resource_costs(cursor, country_code, resource_costs):
+    for resource_id, required in resource_costs.items():
+        cursor.execute("""
+            UPDATE country_resources
+            SET stockpile = stockpile - ?
+            WHERE country_code = ? AND resource_id = ?
+        """, (required, country_code, resource_id))
+
+
+def validate_trade_move(cursor, move, treasuries, resource_stockpiles):
+    country = move["country_code"]
+    partner = move["target_country_code"]
+    amount = move["amount"]
+    resource_id = move["target_resource_id"]
+    move_type = move["move_type"]
+
+    if not partner:
+        return False, "Trade move missing target_country_code"
+    if not country_exists(cursor, partner):
+        return False, f"Trade target country does not exist: {partner}"
+    if partner == country:
+        return False, "Trade target country cannot be the same as source country"
+    if not resource_id or not resource_exists(cursor, resource_id):
+        return False, f"Invalid target_resource_id: {resource_id}"
+
+    source_stock = resource_stockpiles.setdefault(country, {})
+    partner_stock = resource_stockpiles.setdefault(partner, {})
+
+    if move_type == "trade_resource_for_money":
+        price_per_unit = int(move.get("price_per_unit") or 0)
+        if price_per_unit <= 0:
+            return False, "trade_resource_for_money requires price_per_unit > 0"
+
+        if source_stock.get(resource_id, 0) < amount:
+            return False, f"{country} lacks resources for trade (needs {amount})"
+
+        total_price = price_per_unit * amount
+        if treasuries.get(partner, 0) < total_price:
+            return False, f"{partner} cannot afford trade (needs {total_price}, has {treasuries.get(partner, 0)})"
+
+        source_stock[resource_id] = source_stock.get(resource_id, 0) - amount
+        partner_stock[resource_id] = partner_stock.get(resource_id, 0) + amount
+        treasuries[partner] -= total_price
+        treasuries[country] += total_price
+
+        move["__trade"] = {
+            "kind": "money",
+            "source_country": country,
+            "target_country": partner,
+            "resource_id": resource_id,
+            "amount": amount,
+            "price_per_unit": price_per_unit,
+            "total_price": total_price
+        }
+        move["__cost"] = 0
+        return True, "OK"
+
+    if move_type == "trade_resource_for_resource":
+        requested_resource_id = move["trade_resource_id"]
+        if not requested_resource_id or not resource_exists(cursor, requested_resource_id):
+            return False, f"Invalid trade_resource_id: {requested_resource_id}"
+        if requested_resource_id == resource_id:
+            return False, "trade_resource_for_resource requires two different resources"
+
+        if source_stock.get(resource_id, 0) < amount:
+            return False, f"{country} lacks offered resource (needs {amount})"
+        if partner_stock.get(requested_resource_id, 0) < amount:
+            return False, f"{partner} lacks requested resource (needs {amount})"
+
+        source_stock[resource_id] = source_stock.get(resource_id, 0) - amount
+        partner_stock[resource_id] = partner_stock.get(resource_id, 0) + amount
+        partner_stock[requested_resource_id] = partner_stock.get(requested_resource_id, 0) - amount
+        source_stock[requested_resource_id] = source_stock.get(requested_resource_id, 0) + amount
+
+        move["__trade"] = {
+            "kind": "resource",
+            "source_country": country,
+            "target_country": partner,
+            "offered_resource_id": resource_id,
+            "requested_resource_id": requested_resource_id,
+            "amount": amount
+        }
+        move["__cost"] = 0
+        return True, "OK"
+
+    return False, f"Unknown trade move type: {move_type}"
 
 # ================= VALIDATION PHASE =================
 
@@ -124,6 +266,7 @@ def validate_moves(cursor, moves):
     approved = []
     rejected = []
     treasuries = get_country_treasuries(cursor)
+    resource_stockpiles = get_country_resource_stockpiles(cursor)
 
     for move in moves:
         country = move["country_code"]
@@ -144,9 +287,19 @@ def validate_moves(cursor, moves):
         # ===== POLITICAL MOVES =====
         political_move_types = ["declare_war", "make_peace", "anti_corruption", 
                                "stabilize", "reduce_unrest", "propaganda_campaign", "war_effort"]
+        trade_move_types = ["trade_resource_for_money", "trade_resource_for_resource"]
         
         if move["move_type"] in political_move_types:
             valid, msg = validate_political_move(cursor, move, treasuries)
+            if not valid:
+                log(f"❌ Move {move['id']}: {msg}")
+                rejected.append((move["id"], msg))
+                continue
+            approved.append(move)
+            continue
+
+        if move["move_type"] in trade_move_types:
+            valid, msg = validate_trade_move(cursor, move, treasuries, resource_stockpiles)
             if not valid:
                 log(f"❌ Move {move['id']}: {msg}")
                 rejected.append((move["id"], msg))
@@ -170,6 +323,7 @@ def validate_moves(cursor, moves):
 
             cursor.execute("SELECT base_cost FROM building_types WHERE id = ?", (move["target_building_type_id"],))
             cost = cursor.fetchone()[0] * amt
+            resource_costs = get_building_resource_costs(cursor, move["target_building_type_id"], amt)
 
         elif move["move_type"] == "recruit":
             if not unit_exists(cursor, move["target_unit_type_id"]):
@@ -180,9 +334,25 @@ def validate_moves(cursor, moves):
 
             cursor.execute("SELECT recruitment_cost FROM unit_types WHERE id = ?", (move["target_unit_type_id"],))
             cost = cursor.fetchone()[0] * amt
+            resource_costs = get_unit_resource_costs(cursor, move["target_unit_type_id"], amt)
 
         else:
             msg = f"Unknown move type '{move['move_type']}'"
+            log(f"❌ Move {move['id']}: {msg}")
+            rejected.append((move["id"], msg))
+            continue
+
+        country_stock = resource_stockpiles.setdefault(country, {})
+        missing_resources = []
+        for resource_id, required in resource_costs.items():
+            if country_stock.get(resource_id, 0) < required:
+                missing_resources.append((resource_id, required, country_stock.get(resource_id, 0)))
+        if missing_resources:
+            details = ", ".join(
+                f"{get_resource_name(cursor, rid)} needs {need}, has {have}"
+                for rid, need, have in missing_resources
+            )
+            msg = f"{country} lacks resources for {move['move_type']}: {details}"
             log(f"❌ Move {move['id']}: {msg}")
             rejected.append((move["id"], msg))
             continue
@@ -196,7 +366,9 @@ def validate_moves(cursor, moves):
         # Reserve cost in the snapshot so later moves from the same country
         # correctly see the reduced treasury
         treasuries[country] -= cost
+        reserve_resource_costs(resource_stockpiles, country, resource_costs)
         move["__cost"] = cost
+        move["__resource_costs"] = resource_costs
         approved.append(move)
 
     return approved, rejected
@@ -284,6 +456,61 @@ def execute_move(cursor, move):
     country = move["country_code"]
     cost = move["__cost"]
 
+    if move["move_type"] == "trade_resource_for_money":
+        trade = move["__trade"]
+        cursor.execute("""
+            UPDATE country_resources
+            SET stockpile = stockpile - ?
+            WHERE country_code = ? AND resource_id = ?
+        """, (trade["amount"], trade["source_country"], trade["resource_id"]))
+        cursor.execute("""
+            UPDATE country_resources
+            SET stockpile = stockpile + ?
+            WHERE country_code = ? AND resource_id = ?
+        """, (trade["amount"], trade["target_country"], trade["resource_id"]))
+        cursor.execute("""
+            UPDATE country_economy SET treasury = treasury + ?
+            WHERE country_code = ?
+        """, (trade["total_price"], trade["source_country"]))
+        cursor.execute("""
+            UPDATE country_economy SET treasury = treasury - ?
+            WHERE country_code = ?
+        """, (trade["total_price"], trade["target_country"]))
+        resource_name = get_resource_name(cursor, trade["resource_id"])
+        return (
+            f"🤝 {trade['source_country']} sold {trade['amount']} {resource_name} to "
+            f"{trade['target_country']} for {trade['total_price']}"
+        )
+
+    if move["move_type"] == "trade_resource_for_resource":
+        trade = move["__trade"]
+        cursor.execute("""
+            UPDATE country_resources
+            SET stockpile = stockpile - ?
+            WHERE country_code = ? AND resource_id = ?
+        """, (trade["amount"], trade["source_country"], trade["offered_resource_id"]))
+        cursor.execute("""
+            UPDATE country_resources
+            SET stockpile = stockpile + ?
+            WHERE country_code = ? AND resource_id = ?
+        """, (trade["amount"], trade["target_country"], trade["offered_resource_id"]))
+        cursor.execute("""
+            UPDATE country_resources
+            SET stockpile = stockpile - ?
+            WHERE country_code = ? AND resource_id = ?
+        """, (trade["amount"], trade["target_country"], trade["requested_resource_id"]))
+        cursor.execute("""
+            UPDATE country_resources
+            SET stockpile = stockpile + ?
+            WHERE country_code = ? AND resource_id = ?
+        """, (trade["amount"], trade["source_country"], trade["requested_resource_id"]))
+        offered_name = get_resource_name(cursor, trade["offered_resource_id"])
+        requested_name = get_resource_name(cursor, trade["requested_resource_id"])
+        return (
+            f"🔄 {trade['source_country']} traded {trade['amount']} {offered_name} with "
+            f"{trade['target_country']} for {trade['amount']} {requested_name}"
+        )
+
     # Deduct treasury (for all moves that have a cost)
     if cost > 0:
         cursor.execute("""
@@ -302,6 +529,7 @@ def execute_move(cursor, move):
 
     # BUILDINGS
     if move["move_type"] == "build":
+        apply_resource_costs(cursor, country, move.get("__resource_costs", {}))
         cursor.execute("""
             INSERT INTO province_buildings (province_id, building_type_id, amount)
             VALUES (?, ?, ?)
@@ -313,6 +541,7 @@ def execute_move(cursor, move):
 
     # UNITS
     if move["move_type"] == "recruit":
+        apply_resource_costs(cursor, country, move.get("__resource_costs", {}))
         cursor.execute("""
             INSERT INTO country_units (country_code, unit_type_id, amount)
             VALUES (?, ?, ?)
@@ -329,11 +558,14 @@ def process_moves():
     conn = get_connection()
     conn.execute("PRAGMA foreign_keys = ON;")
     cursor = conn.cursor()
+    ensure_country_resource_rows(cursor)
+    conn.commit()
 
     cursor.execute("""
         SELECT id, turn, country_code, move_type,
                target_province_id, target_building_type_id,
-               target_unit_type_id, amount
+               target_unit_type_id, target_country_code,
+               target_resource_id, trade_resource_id, price_per_unit, amount
         FROM player_moves
         WHERE processed = 0
         ORDER BY turn, id
@@ -353,7 +585,11 @@ def process_moves():
         "target_province_id": m[4],
         "target_building_type_id": m[5],
         "target_unit_type_id": m[6],
-        "amount": m[7] or 1
+        "target_country_code": m[7],
+        "target_resource_id": m[8],
+        "trade_resource_id": m[9],
+        "price_per_unit": m[10] or 0,
+        "amount": m[11] or 1
     } for m in raw_moves]
 
     print(f"\n=== PROCESSING {len(moves)} MOVES ===\n")

@@ -30,10 +30,22 @@ def import_countries(cursor):
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
-                INSERT OR IGNORE INTO countries (code, name, capital, culture, 
+                INSERT INTO countries (code, name, capital, culture, 
                     culture_group, religion, government, stability, 
                     unrest, corruption, at_war, war_exhaustion)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(code) DO UPDATE SET
+                    name = excluded.name,
+                    capital = excluded.capital,
+                    culture = excluded.culture,
+                    culture_group = excluded.culture_group,
+                    religion = excluded.religion,
+                    government = excluded.government,
+                    stability = excluded.stability,
+                    unrest = excluded.unrest,
+                    corruption = excluded.corruption,
+                    at_war = excluded.at_war,
+                    war_exhaustion = excluded.war_exhaustion
             """, (
                 row["code"],
                 row["name"],
@@ -64,11 +76,19 @@ def import_provinces(cursor):
                     resource_id = res[0]
 
             cursor.execute("""
-                INSERT OR IGNORE INTO provinces (
+                INSERT INTO provinces (
                     name, population, owner_country_code,
                     rank, religion, culture, terrain, resource_id
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    population = excluded.population,
+                    owner_country_code = excluded.owner_country_code,
+                    rank = excluded.rank,
+                    religion = excluded.religion,
+                    culture = excluded.culture,
+                    terrain = excluded.terrain,
+                    resource_id = excluded.resource_id
             """, (
                 row["name"],
                 int(row["population"]),
@@ -86,9 +106,16 @@ def import_building_types(cursor):
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
-                INSERT OR IGNORE INTO building_types 
+                INSERT INTO building_types 
                 (name, building_type, base_cost, base_tax_income, base_production, base_upkeep, description)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    building_type = excluded.building_type,
+                    base_cost = excluded.base_cost,
+                    base_tax_income = excluded.base_tax_income,
+                    base_production = excluded.base_production,
+                    base_upkeep = excluded.base_upkeep,
+                    description = excluded.description
             """, (
                 row["name"],
                 row.get("building_type", ""),
@@ -249,12 +276,71 @@ def import_resources(cursor):
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
-                INSERT OR IGNORE INTO resources (name, description)
+                INSERT INTO resources (name, description)
                 VALUES (?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    description = excluded.description
             """, (
                 row["name"],
                 row.get("description", "")
             ))
+
+# -------- BUILDING RESOURCE COSTS ----------
+def import_building_resource_costs(cursor):
+    with open("data/building_resource_cost.csv", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            building_name = row.get("building_name", "").strip()
+            resource_name = row.get("resource_name", "").strip()
+            amount_per_unit = int(row.get("amount_per_unit", 0) or 0)
+
+            cursor.execute("SELECT id FROM building_types WHERE name = ?", (building_name,))
+            building = cursor.fetchone()
+            if not building:
+                print(f"⚠ Building type not found in resource costs: {building_name}")
+                continue
+
+            cursor.execute("SELECT id FROM resources WHERE name = ?", (resource_name,))
+            resource = cursor.fetchone()
+            if not resource:
+                print(f"⚠ Resource not found in building resource costs: {resource_name}")
+                continue
+
+            cursor.execute("""
+                INSERT INTO building_resource_costs (building_type_id, resource_id, amount_per_unit)
+                VALUES (?, ?, ?)
+                ON CONFLICT(building_type_id, resource_id) DO UPDATE SET
+                    amount_per_unit = excluded.amount_per_unit
+            """, (building[0], resource[0], amount_per_unit))
+
+
+# -------- UNIT RESOURCE COSTS --------------
+def import_unit_resource_costs(cursor):
+    with open("data/unit_resource_costs.csv", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            unit_name = row.get("unit_name", "").strip()
+            resource_name = row.get("resource_name", "").strip()
+            amount_per_unit = int(row.get("amount_per_unit", 0) or 0)
+
+            cursor.execute("SELECT id FROM unit_types WHERE name = ?", (unit_name,))
+            unit = cursor.fetchone()
+            if not unit:
+                print(f"⚠ Unit type not found in resource costs: {unit_name}")
+                continue
+
+            cursor.execute("SELECT id FROM resources WHERE name = ?", (resource_name,))
+            resource = cursor.fetchone()
+            if not resource:
+                print(f"⚠ Resource not found in unit resource costs: {resource_name}")
+                continue
+
+            cursor.execute("""
+                INSERT INTO unit_resource_costs (unit_type_id, resource_id, amount_per_unit)
+                VALUES (?, ?, ?)
+                ON CONFLICT(unit_type_id, resource_id) DO UPDATE SET
+                    amount_per_unit = excluded.amount_per_unit
+            """, (unit[0], resource[0], amount_per_unit))
 
 
 def validate_schema(cursor):
@@ -262,7 +348,8 @@ def validate_schema(cursor):
         "countries", "provinces", "country_economy",
         "building_types", "province_buildings", "building_effects",
         "country_modifiers", "unit_types", "country_units",
-        "resources", "country_resources"
+        "resources", "country_resources",
+        "building_resource_costs", "unit_resource_costs"
     ]
 
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -298,9 +385,10 @@ def import_economy_snapshot(cursor):
                   get_building_country_modifier(cursor, country, "tax_efficiency")
 
         admin_mod = get_country_modifier(cursor, country, "admin_cost_modifier") * \
-                    get_building_country_modifier(cursor, country, "admin_cost_modifier") * \
-                    get_country_modifier(cursor, country, "admin_efficiency") * \
+                    get_building_country_modifier(cursor, country, "admin_cost_modifier")
+        admin_eff = get_country_modifier(cursor, country, "admin_efficiency") * \
                     get_building_country_modifier(cursor, country, "admin_efficiency")
+        admin_mod /= max(0.0001, admin_eff)
 
         unit_limit_mod = get_country_modifier(cursor, country, "military_unit_limit_mult") * \
                          get_building_country_modifier(cursor, country, "military_unit_limit_mult")
@@ -380,9 +468,11 @@ def main():
         import_resources(cursor)
         import_provinces(cursor)
         import_building_types(cursor)
+        import_building_resource_costs(cursor)
         import_province_buildings(cursor)
         import_country_economy(cursor)
         import_unit_types(cursor)
+        import_unit_resource_costs(cursor)
         import_country_units(cursor)
         import_modifiers(cursor)
         import_building_effects(cursor)

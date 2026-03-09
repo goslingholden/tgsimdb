@@ -1,0 +1,13 @@
+building_name,resource_name,amount_per_unit
+Fattoria,wood,2
+Fattoria,stone,1
+Mercato,wood,4
+Mercato,stone,3
+Officina,wood,5
+Officina,stone,5
+Caserma,wood,6
+Caserma,stone,8
+Municipio,wood,5
+Municipio,stone,6
+Tempio,stone,4
+Tempio,marble,1

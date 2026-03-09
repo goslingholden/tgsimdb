@@ -1,0 +1,8 @@
+unit_name,resource_name,amount_per_unit
+Fanteria,iron,1
+Fanteria,cloth,1
+Cavalleria,iron,1
+Cavalleria,horses,1
+Cavalleria,cloth,1
+Milizia,cloth,1
+Milizia,wood,1

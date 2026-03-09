@@ -71,11 +71,15 @@ def import_player_moves(turn_number):
                         target_province_id,
                         target_building_type_id,
                         target_unit_type_id,
+                        target_country_code,
+                        target_resource_id,
+                        trade_resource_id,
+                        price_per_unit,
                         amount,
                         notes,
                         processed
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 """, (
                     turn_number,
                     clean(row.get("country_code")),
@@ -83,6 +87,10 @@ def import_player_moves(turn_number):
                     clean(row.get("province_id")),
                     clean(row.get("building_type_id")),
                     clean(row.get("unit_type_id")),
+                    clean(row.get("target_country_code")),
+                    clean(row.get("target_resource_id")),
+                    clean(row.get("trade_resource_id")),
+                    int(row.get("price_per_unit", 0) or 0),
                     int(row.get("amount", 1) or 1),
                     clean(row.get("notes"))
                 ))

@@ -355,7 +355,9 @@ def get_resource_ids_by_name(cursor, resource_names):
 
 def consume_food_resources(cursor, country, population, food_resource_ids):
     """Consume food stockpiles for the year and return shortage metrics."""
-    required_food = max(0, math.ceil((population / 1000) * FOOD_PER_1000_POP))
+    raw_required_food = (population / 1000) * FOOD_PER_1000_POP
+    # Round halves up (not banker's rounding) to keep demand predictable.
+    required_food = max(0, int(math.floor(raw_required_food + 0.5)))
     if required_food == 0 or not food_resource_ids:
         return {
             "required": required_food,
@@ -372,16 +374,17 @@ def consume_food_resources(cursor, country, population, food_resource_ids):
         FROM country_resources
         WHERE country_code = ?
           AND resource_id IN ({placeholders})
-        ORDER BY resource_id
         """,
         (country, *food_resource_ids)
     )
-    rows = cursor.fetchall()
+    stockpile_map = {resource_id: int(stockpile or 0) for resource_id, stockpile in cursor.fetchall()}
 
     remaining_need = required_food
     consumed_by_resource = {}
 
-    for resource_id, stockpile in rows:
+    # Consume in configured priority order
+    for resource_id in food_resource_ids:
+        stockpile = stockpile_map.get(resource_id, 0)
         if remaining_need <= 0:
             break
         consumed = min(stockpile, remaining_need)
@@ -420,6 +423,8 @@ def economy_tick():
     if not validate_political_data(cursor):
         conn.close()
         return
+    # Keep resource stockpiles integer-only even if old runs introduced fractions.
+    cursor.execute("UPDATE country_resources SET stockpile = CAST(stockpile AS INTEGER)")
     ensure_country_resource_rows(cursor)
     
     cursor.execute("SELECT code FROM countries")
@@ -477,9 +482,11 @@ def economy_tick():
         tax_eff *= political_mods['tax_efficiency_mod']
         
         admin_mod = get_country_modifier(cursor, country, "admin_cost_modifier")
-        admin_mod *= get_country_modifier(cursor, country, "admin_efficiency")
         admin_mod *= get_building_country_modifier(cursor, country, "admin_cost_modifier")
-        admin_mod *= get_building_country_modifier(cursor, country, "admin_efficiency")
+        # Higher admin_efficiency should reduce costs, not increase them.
+        admin_eff = get_country_modifier(cursor, country, "admin_efficiency")
+        admin_eff *= get_building_country_modifier(cursor, country, "admin_efficiency")
+        admin_mod /= max(0.0001, admin_eff)
         admin_mod *= political_mods['admin_cost_mod']
         
         upkeep_mod = get_country_modifier(cursor, country, "military_upkeep_modifier")

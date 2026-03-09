@@ -14,8 +14,24 @@ def run_command(cmd):
         raise RuntimeError(f"Command failed ({result.returncode}): {' '.join(cmd)}")
 
 
+def wipe_database():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA foreign_keys = OFF;")
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    table_names = [row[0] for row in cursor.fetchall() if row[0] != "sqlite_sequence"]
+
+    for table_name in table_names:
+        cursor.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+
+    cursor.execute("PRAGMA foreign_keys = ON;")
+    conn.commit()
+    conn.close()
+
+
 def reset_world():
     print("Resetting world state from CSV data...")
+    wipe_database()
     run_command(["python3", "setup_db.py"])
     run_command(["python3", "import_data.py"])
 

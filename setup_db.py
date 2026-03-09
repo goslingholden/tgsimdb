@@ -219,6 +219,34 @@ CREATE TABLE IF NOT EXISTS country_resources (
 """)
 print("Country resources table created successfully.")
 
+# ---------------- BUILDING RESOURCE COSTS ----------------
+print("Creating building resource costs table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS building_resource_costs (
+    building_type_id INTEGER NOT NULL,
+    resource_id INTEGER NOT NULL,
+    amount_per_unit INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (building_type_id, resource_id),
+    FOREIGN KEY (building_type_id) REFERENCES building_types(id),
+    FOREIGN KEY (resource_id) REFERENCES resources(id)
+);
+""")
+print("Building resource costs table created successfully.")
+
+# ---------------- UNIT RESOURCE COSTS --------------------
+print("Creating unit resource costs table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS unit_resource_costs (
+    unit_type_id INTEGER NOT NULL,
+    resource_id INTEGER NOT NULL,
+    amount_per_unit INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (unit_type_id, resource_id),
+    FOREIGN KEY (unit_type_id) REFERENCES unit_types(id),
+    FOREIGN KEY (resource_id) REFERENCES resources(id)
+);
+""")
+print("Unit resource costs table created successfully.")
+
 # --------------------- MOVES TABLE ------------------------
 print("Creating player_moves table...")
 cursor.execute("""
@@ -230,6 +258,10 @@ CREATE TABLE IF NOT EXISTS player_moves (
     target_province_id INTEGER,
     target_building_type_id INTEGER,
     target_unit_type_id INTEGER,
+    target_country_code TEXT,
+    target_resource_id INTEGER,
+    trade_resource_id INTEGER,
+    price_per_unit INTEGER DEFAULT 0,
     amount INTEGER DEFAULT 1,
     notes TEXT,
     processed BOOLEAN DEFAULT 0,
@@ -238,10 +270,26 @@ CREATE TABLE IF NOT EXISTS player_moves (
     FOREIGN KEY (country_code) REFERENCES countries(code),
     FOREIGN KEY (target_province_id) REFERENCES provinces(id),
     FOREIGN KEY (target_building_type_id) REFERENCES building_types(id),
-    FOREIGN KEY (target_unit_type_id) REFERENCES unit_types(id)
+    FOREIGN KEY (target_unit_type_id) REFERENCES unit_types(id),
+    FOREIGN KEY (target_country_code) REFERENCES countries(code),
+    FOREIGN KEY (target_resource_id) REFERENCES resources(id),
+    FOREIGN KEY (trade_resource_id) REFERENCES resources(id)
 );
 """)
 print("Player moves table created successfully.")
+
+# Backfill trade columns for already-existing player_moves tables
+cursor.execute("PRAGMA table_info(player_moves)")
+player_move_columns = {row[1] for row in cursor.fetchall()}
+
+if "target_country_code" not in player_move_columns:
+    cursor.execute("ALTER TABLE player_moves ADD COLUMN target_country_code TEXT")
+if "target_resource_id" not in player_move_columns:
+    cursor.execute("ALTER TABLE player_moves ADD COLUMN target_resource_id INTEGER")
+if "trade_resource_id" not in player_move_columns:
+    cursor.execute("ALTER TABLE player_moves ADD COLUMN trade_resource_id INTEGER")
+if "price_per_unit" not in player_move_columns:
+    cursor.execute("ALTER TABLE player_moves ADD COLUMN price_per_unit INTEGER DEFAULT 0")
 
 print("✅ All tables have been created")
 
