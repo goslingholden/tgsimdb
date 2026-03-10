@@ -78,9 +78,9 @@ def import_provinces(cursor):
             cursor.execute("""
                 INSERT INTO provinces (
                     name, population, owner_country_code,
-                    rank, religion, culture, terrain, resource_id
+                    rank, religion, culture, terrain, is_naval, resource_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(name) DO UPDATE SET
                     population = excluded.population,
                     owner_country_code = excluded.owner_country_code,
@@ -88,6 +88,7 @@ def import_provinces(cursor):
                     religion = excluded.religion,
                     culture = excluded.culture,
                     terrain = excluded.terrain,
+                    is_naval = excluded.is_naval,
                     resource_id = excluded.resource_id
             """, (
                 row["name"],
@@ -97,6 +98,7 @@ def import_provinces(cursor):
                 row.get("religion", "Unknown"),
                 row.get("culture", "Unknown"),
                 row.get("terrain", "plains"),
+                float(row.get("is_naval", 0)),
                 resource_id
             ))
 
@@ -175,11 +177,12 @@ def import_unit_types(cursor):
         for row in reader:
             cursor.execute("""
                 INSERT OR IGNORE INTO unit_types (
-                    name, recruitment_cost, upkeep_cost, attack, defense
+                    name, terrain_cat, recruitment_cost, upkeep_cost, attack, defense
                 )
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 row["name"],
+                row.get("terrain_cat"),
                 int(row.get("recruitment_cost", 0) or 0),
                 int(row.get("upkeep_cost", 0) or 0),
                 int(row.get("attack", 0) or 0),

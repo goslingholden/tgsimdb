@@ -1,8 +1,15 @@
-name,recruitment_cost,upkeep_cost,attack,defense
-Arcieri,80,3,5,3
-Arcieri a cavallo,160,6,8,3
-Fanteria leggera,100,3,5,5
-Fanteria pesante,160,6,7,7
-Cavalleria leggera,100,4,8,4
-Cavalleria pesante,180,7,12,4
-Elefanti da guerra,280,10,16,10
+name,terrain_cat,recruitment_cost,upkeep_cost,attack,defense
+Arcieri,land,80,4,5,3
+Arcieri a cavallo,land,160,8,8,3
+Fanteria leggera,land,100,5,5,5
+Fanteria pesante,land,160,8,7,7
+Cavalleria leggera,land,100,5,8,4
+Cavalleria pesante,land,180,9,12,4
+Elefanti da guerra,land,280,14,16,10
+Liburna,naval,50,3,2,1
+Trireme,naval,80,4,2,2
+Tetrera,naval,100,5,4,3
+Esareme,naval,150,8,6,4
+Ottireme,naval,250,12,8,8
+Decireme,naval,320,16,10,10
+Polireme,naval,500,25,16,12

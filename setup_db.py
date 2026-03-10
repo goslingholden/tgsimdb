@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS provinces (
     religion TEXT NOT NULL DEFAULT 'Unknown',
     culture TEXT NOT NULL DEFAULT 'Unknown',
     terrain TEXT NOT NULL DEFAULT 'plains',
+    is_naval REAL NOT NULL DEFAULT 0,
     resource_id INTEGER,
     FOREIGN KEY (owner_country_code) REFERENCES countries(code),
     FOREIGN KEY (resource_id) REFERENCES resources(id)
@@ -113,6 +114,7 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS unit_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
+    terrain_cat TEXT NOT NULL,
     recruitment_cost INTEGER NOT NULL,
     upkeep_cost INTEGER NOT NULL,
     attack INTEGER NOT NULL,
