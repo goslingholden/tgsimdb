@@ -10,6 +10,11 @@ from economy_tick import (
     get_building_economy,
     get_resource_production,
     ensure_country_resource_rows,
+    get_land_military_upkeep,
+    get_navy_upkeep,
+    get_total_navy_units,
+    get_total_land_units,
+    get_coastal_province_count,
 )
 
 # ---------------- LOAD CONFIG ----------------
@@ -176,13 +181,19 @@ def import_unit_types(cursor):
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
-                INSERT OR IGNORE INTO unit_types (
-                    name, terrain_cat, recruitment_cost, upkeep_cost, attack, defense
+                INSERT INTO unit_types (
+                    name, unit_category, recruitment_cost, upkeep_cost, attack, defense
                 )
                 VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET
+                    unit_category = excluded.unit_category,
+                    recruitment_cost = excluded.recruitment_cost,
+                    upkeep_cost = excluded.upkeep_cost,
+                    attack = excluded.attack,
+                    defense = excluded.defense
             """, (
                 row["name"],
-                row.get("terrain_cat"),
+                row.get("unit_category"),
                 int(row.get("recruitment_cost", 0) or 0),
                 int(row.get("upkeep_cost", 0) or 0),
                 int(row.get("attack", 0) or 0),
@@ -195,7 +206,7 @@ def import_country_units(cursor):
         reader = csv.DictReader(f)
         for row in reader:
             country = row["country_code"]
-            unit = row["unit_type"]
+            unit = row["unit_type"].strip()
             amount = int(row.get("amount", 0) or 0)
 
             cursor.execute("SELECT id FROM unit_types WHERE name = ?", (unit,))
@@ -379,7 +390,7 @@ def import_economy_snapshot(cursor):
             print(f"⚠ No economy row for {country}")
             continue
 
-        _, tax_rate = row
+        treasury, tax_rate = row
 
         population = get_population(cursor, country)
         provinces = get_province_count(cursor, country)
@@ -413,11 +424,7 @@ def import_economy_snapshot(cursor):
         building_income_raw, building_upkeep = get_building_economy(cursor, country)
         building_income = building_income_raw * building_income_mult
 
-        unit_limit = int((population * BASE_UNIT_RATIO * unit_limit_mod) / POP_PER_UNIT + 5)
-        total_units = cursor.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM country_units WHERE country_code = ?",
-            (country,)
-        ).fetchone()[0]
+        land_unit_limit = int((population * BASE_UNIT_RATIO * unit_limit_mod) / POP_PER_UNIT + 5)
 
         production = get_resource_production(cursor, country)
         resource_cap = provinces * RESOURCE_CAP_PER_PROVINCE
@@ -428,6 +435,7 @@ def import_economy_snapshot(cursor):
 
         total_income = int(tax_income + building_income)
         total_expenses = int(administration_cost + military_upkeep + building_upkeep)
+        new_treasury = treasury + total_income - total_expenses
 
         cursor.execute("""
             UPDATE country_economy SET
@@ -452,11 +460,42 @@ def import_economy_snapshot(cursor):
             country
         ))
 
+        # --- Military unit calculations ---
+        land_military_upkeep = get_land_military_upkeep(cursor, country)
+        navy_upkeep_raw = get_navy_upkeep(cursor, country)
+        land_military_upkeep_final = land_military_upkeep * upkeep_mod
+        navy_upkeep_mod = get_country_modifier(cursor, country, "navy_upkeep_modifier")
+        navy_upkeep_mod *= 1.0  # No political mods in import snapshot
+        navy_military_upkeep_final = navy_upkeep_raw * navy_upkeep_mod
+        
+        # --- Navy info ---
+        total_navy_units = get_total_navy_units(cursor, country)
+        coastal_provinces = get_coastal_province_count(cursor, country)
+        config_local = configparser.ConfigParser()
+        config_local.read("config.ini")
+        naval_cap_multiplier = int(config_local.get("military", "naval_cap_per_coastal_province", fallback=10))
+        navy_cap = coastal_provinces * naval_cap_multiplier
+        
+        # --- Land units ---
+        total_land_units = get_total_land_units(cursor, country)
+
         print(
-            f"{country}: pop={population}, prov={provinces}, units={total_units}/{unit_limit}, "
-            f"income={total_income}, expenses={total_expenses}, "
-            f"resource_cap={resource_cap}, stockpile={stockpile_total}, produced={sum(production.values())}"
-        )
+            f"\n=== {country} DEBUG INFO ==="
+            f"\nPopulation: {population:,} (provinces: {provinces})"
+            f"\nLand Units: {total_land_units:,}/{land_unit_limit:,}"
+            f"\nNavy Units: {total_navy_units:,}/{navy_cap:,} (coastal: {coastal_provinces})"
+            f"\nTax Income: {int(tax_income):,}"
+            f"\nBuilding Income: {int(building_income):,}"
+            f"\nTotal Income: {total_income:,}"
+            f"\nAdministration Cost: {int(administration_cost):,}"
+            f"\nLand Military Upkeep: {int(land_military_upkeep_final):,}"
+            f"\nNavy Military Upkeep: {int(navy_military_upkeep_final):,}"
+            f"\nBuilding Upkeep: {int(building_upkeep):,}"
+            f"\nTotal Expenses: {total_expenses:,}"
+            f"\nTreasury: {treasury:,} → {new_treasury:,}"
+            f"\nResource Cap: {resource_cap:,} | Total Stockpile: {stockpile_total:,}"
+            f"\nResource Production: {production if production else 'None'}"
+            f"\n--------------------------------------------------")
 
     print("✅ IMPORT ECONOMY COMPLETE")
 

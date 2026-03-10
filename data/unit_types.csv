@@ -1,4 +1,4 @@
-name,terrain_cat,recruitment_cost,upkeep_cost,attack,defense
+name,unit_category,recruitment_cost,upkeep_cost,attack,defense
 Arcieri,land,80,4,5,3
 Arcieri a cavallo,land,160,8,8,3
 Fanteria leggera,land,100,5,5,5

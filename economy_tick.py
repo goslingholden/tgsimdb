@@ -245,19 +245,99 @@ def get_province_count(cursor, country):
 
 # ================== MILITARY ==================
 
-def get_military_upkeep(cursor, country):
+def get_navy_upkeep(cursor, country):
+    """Get upkeep cost for navy units only."""
     cursor.execute("""
         SELECT COALESCE(SUM(cu.amount * ut.upkeep_cost), 0)
         FROM country_units cu
         JOIN unit_types ut ON cu.unit_type_id = ut.id
-        WHERE cu.country_code = ?
+        WHERE cu.country_code = ? AND ut.unit_category = 'naval'
     """, (country,))
     return cursor.fetchone()[0] or 0
 
 
-def get_total_units(cursor, country):
-    cursor.execute("SELECT COALESCE(SUM(amount), 0) FROM country_units WHERE country_code = ?", (country,))
+def get_land_military_upkeep(cursor, country):
+    """Get upkeep cost for land military units only."""
+    cursor.execute("""
+        SELECT COALESCE(SUM(cu.amount * ut.upkeep_cost), 0)
+        FROM country_units cu
+        JOIN unit_types ut ON cu.unit_type_id = ut.id
+        WHERE cu.country_code = ? AND ut.unit_category = 'land'
+    """, (country,))
     return cursor.fetchone()[0] or 0
+
+
+def get_military_upkeep(cursor, country):
+    """Get total military upkeep (land units only, for backward compatibility)."""
+    return get_land_military_upkeep(cursor, country)
+
+
+def get_total_land_units(cursor, country):
+    """Get total count of land military units (excluding navy)."""
+    cursor.execute("""
+        SELECT COALESCE(SUM(amount), 0) 
+        FROM country_units cu
+        JOIN unit_types ut ON cu.unit_type_id = ut.id
+        WHERE cu.country_code = ? AND ut.unit_category = 'land'
+    """, (country,))
+    return cursor.fetchone()[0] or 0
+
+
+def get_total_navy_units(cursor, country):
+    """Get total count of navy units."""
+    cursor.execute("""
+        SELECT COALESCE(SUM(amount), 0) 
+        FROM country_units cu
+        JOIN unit_types ut ON cu.unit_type_id = ut.id
+        WHERE cu.country_code = ? AND ut.unit_category = 'naval'
+    """, (country,))
+    return cursor.fetchone()[0] or 0
+
+
+def get_coastal_province_count(cursor, country):
+    """Get count of coastal provinces (is_naval = 1)."""
+    cursor.execute("""
+        SELECT COUNT(*) 
+        FROM provinces 
+        WHERE owner_country_code = ? AND is_naval = 1
+    """, (country,))
+    return cursor.fetchone()[0] or 0
+
+
+def get_navy_unit_cap(cursor, country, coastal_multiplier=10):
+    """
+    Calculate navy unit cap based on coastal provinces.
+    
+    Args:
+        cursor: DB cursor
+        country: Country code
+        coastal_multiplier: Base units per coastal province
+    
+    Returns:
+        Maximum allowed navy units for this country
+    """
+    coastal_count = get_coastal_province_count(cursor, country)
+    # Read from config if you want to make it configurable
+    config = configparser.ConfigParser()
+    config.read("config.ini")
+    
+    # Default: 10 units per coastal province
+    multiplier = int(config.get("military", "naval_cap_per_coastal_province", fallback=10))
+    return coastal_count * multiplier
+
+def validate_navy_cap(cursor, country):
+    """Check if navy units exceed cap and return overage info."""
+    current_navy = get_total_navy_units(cursor, country)
+    navy_cap = get_navy_unit_cap(cursor, country)
+    overage = max(0, current_navy - navy_cap)
+    
+    return {
+        "current": current_navy,
+        "cap": navy_cap,
+        "is_over_cap": overage > 0,
+        "overage": overage,
+        "coastal_provinces": get_coastal_province_count(cursor, country)
+    }
 
 
 # ================== BUILDING ECONOMY ==================
@@ -502,8 +582,13 @@ def economy_tick():
         
         administration_cost = provinces * float(config["economy"]["admin_cost_per_province"]) * admin_mod
         
-        base_upkeep = get_military_upkeep(cursor, country)
-        military_upkeep = base_upkeep * upkeep_mod
+        land_upkeep = get_land_military_upkeep(cursor, country)
+        navy_upkeep_raw = get_navy_upkeep(cursor, country)
+        land_military_upkeep = land_upkeep * upkeep_mod
+        navy_upkeep_mod = get_country_modifier(cursor, country, "navy_upkeep_modifier")
+        navy_upkeep_mod *= political_mods['military_upkeep_mod']
+        navy_military_upkeep = navy_upkeep_raw * navy_upkeep_mod
+        military_upkeep = land_military_upkeep + navy_military_upkeep
         
         building_income_raw, building_upkeep = get_building_economy(cursor, country)
         building_income_mult = get_country_modifier(cursor, country, "production_efficiency")
@@ -597,24 +682,46 @@ def economy_tick():
             ORDER BY r.name
         """, (country,)).fetchall()
         
-        # --- Debug output ---
-        print(f"\n{country}")
-        print(f" Population: {population} → {new_total_population} (change: {political_mods['population_change']:+d})")
-        print(f" Stability: {old_stability:.1f} → {new_stability:.1f} (change: {political_mods['stability_change']:.2f})")
-        print(f" Unrest: {old_unrest:.1f} → {new_unrest:.1f} (change: {political_mods['unrest_change']:.2f})")
-        print(f" Corruption: {old_corruption:.3f} → {new_corruption:.3f} (change: {political_mods['corruption_change']:.3f})")
-        print(f" War Exhaustion: {old_war_exhaustion:.1f} → {new_war_exhaustion:.1f} (change: {political_mods['war_exhaustion_change']:.2f})")
-        print(f" Tax Eff: {tax_eff:.3f} (political mod: {political_mods['tax_efficiency_mod']:.3f})")
-        print(f" Food: consumed {food_result['consumed']}/{food_result['required']} | shortage {food_result['shortage']} | tax x{food_tax_multiplier:.3f}")
-        print(f" Income: Tax {int(tax_income_after_corruption)} | Buildings {int(building_income)} | Growth {growth_amount}")
-        print(f" Expenses: Admin {int(administration_cost)} | Military {int(military_upkeep)} | Buildings {int(building_upkeep)}")
-        print(f" Treasury: {treasury} → {new_treasury}")
+        # --- Prepare debug output data ---
+        total_land_units = get_total_land_units(cursor, country)
+        unit_limit_mod = get_country_modifier(cursor, country, "military_unit_limit_mult")
+        unit_limit_mod *= get_building_country_modifier(cursor, country, "military_unit_limit_mult")
+        land_unit_limit = int((population * BASE_UNIT_RATIO * unit_limit_mod) / POP_PER_UNIT + 5)
+        navy_info = validate_navy_cap(cursor, country)
+        
+        print(
+            f"\n=== {country} DEBUG INFO ==="
+            f"\nPopulation: {population:,} → {new_total_population:,} (change: {political_mods['population_change']:+d})"
+            f"\nLand Units: {total_land_units:,}/{land_unit_limit:,} (limit: {land_unit_limit:,})"
+            f"\nNavy Units: {navy_info['current']:,}/{navy_info['cap']:,} (coastal: {navy_info['coastal_provinces']})"
+            f"\nTax Income: {int(tax_income):,} (after corruption: {int(tax_income_after_corruption):,})"
+            f"\nBuilding Income: {int(building_income):,}"
+            f"\nTotal Income: {total_income:,}"
+            f"\nAdministration Cost: {int(administration_cost):,}"
+            f"\nLand Military Upkeep: {int(land_military_upkeep):,}"
+            f"\nNavy Military Upkeep: {int(navy_military_upkeep):,}"
+            f"\nBuilding Upkeep: {int(building_upkeep):,}"
+            f"\nTotal Expenses: {total_expenses:,}"
+            f"\nTreasury: {treasury:,} → {new_treasury:,}"
+            f"\nResource Cap: {resource_cap:,} | Total Stockpile: {sum(s[1] for s in stockpile):,}"
+            f"\nResource Production:"
+        )
         if production:
-            print(" Resource Production:")
             for resource_id, amount in sorted(production.items()):
                 resource_name = resource_names.get(resource_id, f"ID_{resource_id}")
-                print(f"   +{actually_added.get(resource_id, 0)}/{amount} {resource_name}")
-        print(f" Resource Cap: {resource_cap} | Total Stockpile: {sum(s[1] for s in stockpile)}")
+                print(f"   +{actually_added.get(resource_name, 0):,}/{amount:,} {resource_name}")
+        print(f"\nPolitical State:")
+        print(f"  Stability: {old_stability:.1f} → {new_stability:.1f} (change: {political_mods['stability_change']:.2f})")
+        print(f"  Unrest: {old_unrest:.1f} → {new_unrest:.1f} (change: {political_mods['unrest_change']:.2f})")
+        print(f"  Corruption: {old_corruption:.3f} → {new_corruption:.3f} (change: {political_mods['corruption_change']:.3f})")
+        print(f"  War Exhaustion: {old_war_exhaustion:.1f} → {new_war_exhaustion:.1f} (change: {political_mods['war_exhaustion_change']:.2f})")
+        print(f"  At War: {political_mods['at_war']}")
+        print(f"  Tax Efficiency: {tax_eff:.3f} (political mod: {political_mods['tax_efficiency_mod']:.3f})")
+        print(f"  Food: consumed {food_result['consumed']:,}/{food_result['required']:,} | shortage {food_result['shortage']:,} | tax x{food_tax_multiplier:.3f}")
+        print(f"  Food Unrest Increase: {food_unrest_increase:.2f}")
+        print(f"  Population Change: {political_mods['population_change']:+d}")
+        print(f"  Economic Growth Rate: {total_growth_rate:.3f}")
+        print(f"  Growth Amount: {growth_amount:,}")
         print("--------------------------------------------------")
     
     conn.commit()

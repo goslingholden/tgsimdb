@@ -114,7 +114,7 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS unit_types (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
-    terrain_cat TEXT NOT NULL,
+    unit_category TEXT NOT NULL,
     recruitment_cost INTEGER NOT NULL,
     upkeep_cost INTEGER NOT NULL,
     attack INTEGER NOT NULL,
