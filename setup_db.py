@@ -4,7 +4,7 @@ conn = get_connection()
 cursor = conn.cursor()
 conn.execute("PRAGMA foreign_keys = ON;")
 
-# -------------------- COUNTRIES --------------------
+
 print("Building nations...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS countries (
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS countries (
 """)
 print("Nation-building completed.")
 
-# ----------------------- RESOURCES ------------------------
+
 print("Creating resources table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS resources (
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS resources (
 """)
 print("Resources table created successfully.")
 
-# -------------------- PROVINCES --------------------
+
 print("Creating provinces table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS provinces (
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS provinces (
 """)
 print("Provinces table created successfully.")
 
-# -------------------- BUILDING TYPES --------------------
+
 print("Creating building_types table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS building_types (
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS building_types (
 """)
 print("Building types table created successfully.")
 
-# -------------------- PROVINCE BUILDINGS --------------------
+
 print("Creating province_buildings table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS province_buildings (
@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS province_buildings (
 """)
 print("Province buildings table created successfully.")
 
-# -------------------- COUNTRY ECONOMY --------------------
+
 print("Creating country_economy table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS country_economy (
@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS country_economy (
 """)
 print("Country economy table created successfully.")
 
-# --------------------- UNIT TYPES -------------------------
+
 print("Creating unit_types table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS unit_types (
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS unit_types (
 """)
 print("Unit types table created successfully.")
 
-# -------------------- COUNTRY UNITS ------------------------
+
 print("Creating country_units table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS country_units (
@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS country_units (
 """)
 print("Country units table created successfully.")
 
-# ------------------- MASTER MODIFIER ----------------------
+
 print("Creating master modifier table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS modifiers (
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS modifiers (
 """)
 print("Master modifiers table created successfully.")
 
-# ------------------- BUILDING EFFECTS ---------------------
+
 print("Creating building effects table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS building_effects (
@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS building_effects (
 """)
 print("Building effects table created successfully.")
 
-# ------------------- COUNTRY MODIFIERS ---------------------
+
 print("Creating country modifiers table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS country_modifiers (
@@ -178,36 +178,7 @@ CREATE TABLE IF NOT EXISTS country_modifiers (
 """)
 print("Country modifiers table created successfully.")
 
-# ------------------- PROVINCE MODIFIERS --------------------
-# print("Creating province modifiers table...")
-# cursor.execute("""
-# CREATE TABLE province_modifiers (
-#     province_id INTEGER,
-#     modifier_key TEXT,
-#     value REAL DEFAULT 0,
-#     PRIMARY KEY (province_id, modifier_key),
-#     FOREIGN KEY (province_id) REFERENCES provinces(id),
-#     FOREIGN KEY (modifier_key) REFERENCES modifiers(modifier_key)
-# );
-# """)
-# print("Province modifiers table created successfully.")
 
-# ------------------- MODIFIER SOURCES ----------------------
-# print("Creating modifier sources table...")
-# cursor.execute("""
-# CREATE TABLE IF NOT EXISTS modifier_sources (
-#     id INTEGER PRIMARY KEY AUTOINCREMENT,
-#     scope TEXT CHECK(scope IN ('province','country')),
-#     scope_id TEXT,
-#     modifier_key TEXT,
-#     value REAL,
-#     source_type TEXT,
-#     source_id TEXT
-# );
-# """)
-# print("Modifiers source table created successfully.")
-
-# ------------------- COUNTRY RESOURCES ---------------------
 print("Creating country_resources table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS country_resources (
@@ -221,7 +192,7 @@ CREATE TABLE IF NOT EXISTS country_resources (
 """)
 print("Country resources table created successfully.")
 
-# ---------------- BUILDING RESOURCE COSTS ----------------
+
 print("Creating building resource costs table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS building_resource_costs (
@@ -235,7 +206,7 @@ CREATE TABLE IF NOT EXISTS building_resource_costs (
 """)
 print("Building resource costs table created successfully.")
 
-# ---------------- UNIT RESOURCE COSTS --------------------
+
 print("Creating unit resource costs table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS unit_resource_costs (
@@ -249,7 +220,7 @@ CREATE TABLE IF NOT EXISTS unit_resource_costs (
 """)
 print("Unit resource costs table created successfully.")
 
-# --------------------- MOVES TABLE ------------------------
+
 print("Creating player_moves table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS player_moves (
@@ -280,7 +251,7 @@ CREATE TABLE IF NOT EXISTS player_moves (
 """)
 print("Player moves table created successfully.")
 
-# Backfill trade columns for already-existing player_moves tables
+
 cursor.execute("PRAGMA table_info(player_moves)")
 player_move_columns = {row[1] for row in cursor.fetchall()}
 

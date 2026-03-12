@@ -6,7 +6,7 @@ import sys
 MOVES_FOLDER = "moves"
 
 
-# ================= UTILITIES =================
+
 
 def clean(value):
     """Convert empty strings to None for SQLite NULL"""
@@ -16,7 +16,7 @@ def clean(value):
     return value if value != "" else None
 
 
-# ================= IMPORT FUNCTION =================
+
 
 def import_player_moves(turn_number):
 
@@ -32,18 +32,18 @@ def import_player_moves(turn_number):
     cursor = conn.cursor()
 
     try:
-        # Prevent double import
+        
         cursor.execute("SELECT COUNT(*) FROM player_moves WHERE turn = ?", (turn_number,))
         if cursor.fetchone()[0] > 0:
             print(f"⚠ Turn {turn_number} already imported. Aborting.")
             conn.close()
             return
 
-        # Open CSV
+        
         with open(filename, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
 
-            # Validate CSV headers
+            
             required_fields = {
                 "country_code",
                 "move_type",
@@ -109,7 +109,7 @@ def import_player_moves(turn_number):
         conn.close()
 
 
-# ================= CLI ENTRYPOINT =================
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

@@ -1,7 +1,7 @@
 from db_utils import get_connection
 import configparser
 
-# ================= LOAD CONFIG =================
+
 
 config = configparser.ConfigParser()
 config.read("config.ini")
@@ -9,7 +9,7 @@ config.read("config.ini")
 MOVE_LOGGING = config.getboolean("moves", "logging", fallback=True)
 BATCH_VALIDATE = config.getboolean("moves", "batch_validation", fallback=True)
 
-# ================= UTILITIES =================
+
 
 def log(msg):
     if MOVE_LOGGING:
@@ -199,7 +199,7 @@ def validate_trade_move(cursor, move, treasuries, resource_stockpiles):
 
     return False, f"Unknown trade move type: {move_type}"
 
-# ================= VALIDATION PHASE =================
+
 
 def validate_political_move(cursor, move, treasuries):
     """Validate political action moves."""
@@ -207,7 +207,7 @@ def validate_political_move(cursor, move, treasuries):
     amt = move["amount"]
     move_type = move["move_type"]
     
-    # Get current political state
+    
     politics = get_country_politics(cursor, country)
     if not politics:
         return False, f"{country} has no political data"
@@ -215,7 +215,7 @@ def validate_political_move(cursor, move, treasuries):
     config = configparser.ConfigParser()
     config.read("config.ini")
     
-    # Check affordability
+    
     cost = 0
     if move_type == "anti_corruption":
         cost = amt * float(config["political_actions"]["anti_corruption_cost_per_unit"])
@@ -240,18 +240,18 @@ def validate_political_move(cursor, move, treasuries):
     elif move_type == "declare_war":
         if politics['at_war']:
             return False, f"{country} is already at war"
-        # No cost for declaring war
+        
     elif move_type == "make_peace":
         if not politics['at_war']:
             return False, f"{country} is not at war"
-        # No cost for making peace
+        
     else:
         return False, f"Unknown political move type: {move_type}"
     
     if treasuries[country] < cost:
         return False, f"{country} cannot afford {move_type} (needs {cost}, has {treasuries[country]})"
     
-    # Reserve cost
+    
     treasuries[country] -= cost
     move["__cost"] = cost
     return True, "OK"
@@ -284,7 +284,7 @@ def validate_moves(cursor, moves):
             rejected.append((move["id"], msg))
             continue
 
-        # ===== POLITICAL MOVES =====
+        
         political_move_types = ["declare_war", "make_peace", "anti_corruption", 
                                "stabilize", "reduce_unrest", "propaganda_campaign", "war_effort"]
         trade_move_types = ["trade_resource_for_money", "trade_resource_for_resource"]
@@ -307,7 +307,7 @@ def validate_moves(cursor, moves):
             approved.append(move)
             continue
 
-        # ===== EXISTING VALIDATION (build, recruit) =====
+        
         if move["move_type"] == "build":
             if not province_owned_by(cursor, move["target_province_id"], country):
                 msg = f"{country} does not own province {move['target_province_id']}"
@@ -363,8 +363,8 @@ def validate_moves(cursor, moves):
             rejected.append((move["id"], msg))
             continue
 
-        # Reserve cost in the snapshot so later moves from the same country
-        # correctly see the reduced treasury
+        
+        
         treasuries[country] -= cost
         reserve_resource_costs(resource_stockpiles, country, resource_costs)
         move["__cost"] = cost
@@ -374,7 +374,7 @@ def validate_moves(cursor, moves):
     return approved, rejected
 
 
-# ================= EXECUTION PHASE =================
+
 
 def execute_political_move(cursor, move):
     """Execute a political action move."""
@@ -385,7 +385,7 @@ def execute_political_move(cursor, move):
     config = configparser.ConfigParser()
     config.read("config.ini")
     
-    # Get current values
+    
     cursor.execute("""
         SELECT stability, unrest, corruption, at_war, war_exhaustion
         FROM countries WHERE code = ?
@@ -410,7 +410,7 @@ def execute_political_move(cursor, move):
     
     elif move_type == "anti_corruption":
         reduction_per_unit = float(config["political_actions"]["anti_corruption_reduction_per_unit"])
-        total_reduction = min(amt * reduction_per_unit, corruption)  # Can't go below 0
+        total_reduction = min(amt * reduction_per_unit, corruption)  
         new_corruption = max(0, corruption - total_reduction)
         cursor.execute("UPDATE countries SET corruption = ? WHERE code = ?", (new_corruption, country))
         changes = {'corruption': new_corruption}
@@ -418,7 +418,7 @@ def execute_political_move(cursor, move):
     
     elif move_type == "stabilize":
         increase_per_unit = float(config["political_actions"]["stabilize_increase_per_unit"])
-        total_increase = min(amt * increase_per_unit, 100 - stability)  # Cap at 100
+        total_increase = min(amt * increase_per_unit, 100 - stability)  
         new_stability = min(100, stability + total_increase)
         cursor.execute("UPDATE countries SET stability = ? WHERE code = ?", (new_stability, country))
         changes = {'stability': new_stability}
@@ -426,7 +426,7 @@ def execute_political_move(cursor, move):
     
     elif move_type == "reduce_unrest":
         reduction_per_unit = float(config["political_actions"]["reduce_unrest_reduction_per_unit"])
-        total_reduction = min(amt * reduction_per_unit, unrest)  # Can't go below 0
+        total_reduction = min(amt * reduction_per_unit, unrest)  
         new_unrest = max(0, unrest - total_reduction)
         cursor.execute("UPDATE countries SET unrest = ? WHERE code = ?", (new_unrest, country))
         changes = {'unrest': new_unrest}
@@ -511,7 +511,7 @@ def execute_move(cursor, move):
             f"{trade['target_country']} for {trade['amount']} {requested_name}"
         )
 
-    # Deduct treasury (for all moves that have a cost)
+    
     if cost > 0:
         cursor.execute("""
             UPDATE country_economy
@@ -519,7 +519,7 @@ def execute_move(cursor, move):
             WHERE country_code = ?
         """, (cost, country))
 
-    # POLITICAL MOVES
+    
     political_moves = ["declare_war", "make_peace", "anti_corruption", 
                       "stabilize", "reduce_unrest", "propaganda_campaign", "war_effort"]
     
@@ -527,7 +527,7 @@ def execute_move(cursor, move):
         msg, changes = execute_political_move(cursor, move)
         return msg
 
-    # BUILDINGS
+    
     if move["move_type"] == "build":
         apply_resource_costs(cursor, country, move.get("__resource_costs", {}))
         cursor.execute("""
@@ -539,7 +539,7 @@ def execute_move(cursor, move):
 
         return f"✅ {country} built {move['amount']}x building {move['target_building_type_id']} (cost {cost})"
 
-    # UNITS
+    
     if move["move_type"] == "recruit":
         apply_resource_costs(cursor, country, move.get("__resource_costs", {}))
         cursor.execute("""
@@ -552,7 +552,7 @@ def execute_move(cursor, move):
         return f"✅ {country} recruited {move['amount']}x unit {move['target_unit_type_id']} (cost {cost})"
 
 
-# ================= MAIN PROCESSOR =================
+
 
 def process_moves():
     conn = get_connection()
@@ -594,12 +594,12 @@ def process_moves():
 
     print(f"\n=== PROCESSING {len(moves)} MOVES ===\n")
 
-    # ===== VALIDATION PASS =====
+    
     if BATCH_VALIDATE:
         approved_moves, rejected_moves = validate_moves(cursor, moves)
         log(f"\nApproved {len(approved_moves)} moves, rejected {len(rejected_moves)}")
     else:
-        # Validate each move independently without shared treasury tracking
+        
         approved_moves = []
         rejected_moves = []
         for move in moves:
@@ -611,7 +611,7 @@ def process_moves():
     try:
         conn.execute("BEGIN TRANSACTION;")
 
-        # ===== EXECUTION =====
+        
         for move in approved_moves:
             msg = execute_move(cursor, move)
             log(msg)
@@ -636,7 +636,7 @@ def process_moves():
         conn.close()
 
 
-# ================= ENTRYPOINT =================
+
 
 if __name__ == "__main__":
     process_moves()

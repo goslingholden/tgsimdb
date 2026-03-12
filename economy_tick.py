@@ -2,7 +2,6 @@ from db_utils import get_connection
 import configparser
 import math
 
-# ---------------- LOAD CONFIG ----------------
 config = configparser.ConfigParser()
 config.read("config.ini")
 
@@ -20,10 +19,7 @@ FOOD_SHORTAGE_UNREST_INCREASE_MAX = float(config["food"]["food_shortage_unrest_i
 POP_PER_UNIT = int(config["military"]["pop_per_unit"])
 BASE_UNIT_RATIO = float(config["military"]["base_unit_ratio"])
 
-# --------------------------------------------
 
-
-# ================== DB VALIDATION ==================
 
 def validate_schema(cursor):
     required_tables = [
@@ -69,7 +65,7 @@ def validate_political_data(cursor):
         return False
     return True
 
-# ================ POLITICAL MODIFIERS ================
+
 def calculate_political_modifiers(cursor, country_code):
     """Calculate all political modifiers for a country."""
     
@@ -84,11 +80,11 @@ def calculate_political_modifiers(cursor, country_code):
     
     stability, unrest, corruption, at_war, war_exhaustion = row
     
-    # Load config
+    
     config = configparser.ConfigParser()
     config.read("config.ini")
     
-    # Calculate modifiers
+    
     tax_efficiency_mod = 1.0
     admin_cost_mod = 1.0
     military_upkeep_mod = 1.0
@@ -98,17 +94,17 @@ def calculate_political_modifiers(cursor, country_code):
     war_exhaustion_change = 0.0
     population_change = 0
     
-    # Load bounds from config
+    
     tax_eff_min = float(config["bounds"]["tax_efficiency_min"])
     
-    # Stability effects
+    
     tax_efficiency_mod += (stability - 50) * 0.002
     unrest_change += (50 - stability) * 0.1
     
-    # Unrest effects
+    
     admin_cost_mod += unrest * float(config["politics"]["unrest_admin_multiplier"])
     tax_efficiency_mod -= unrest * float(config["politics"]["unrest_tax_penalty"])
-    tax_efficiency_mod = max(tax_eff_min, tax_efficiency_mod)  # Cap minimum from config
+    tax_efficiency_mod = max(tax_eff_min, tax_efficiency_mod)  
     stability_change -= unrest * float(config["politics"]["unrest_stability_drain"])
     
     unrest_high_threshold = float(config["politics"]["unrest_high_threshold"])
@@ -116,12 +112,12 @@ def calculate_political_modifiers(cursor, country_code):
         pop_loss = int((unrest - unrest_high_threshold) * float(config["politics"]["unrest_population_loss_factor"]))
         population_change -= pop_loss
     
-    # Corruption effects
-    corruption_change = -corruption * 0.01  # Natural decay
+    
+    corruption_change = -corruption * 0.01  
     if at_war:
         corruption_change += float(config["politics"]["corruption_war_increase"])
     
-    # War effects
+    
     if at_war:
         military_upkeep_mod *= float(config["politics"]["war_military_upkeep_multiplier"])
         admin_cost_mod += float(config["politics"]["war_admin_cost_multiplier"])
@@ -131,7 +127,7 @@ def calculate_political_modifiers(cursor, country_code):
         stability_change -= war_exhaustion * 0.05
         military_upkeep_mod *= (1 + war_exhaustion * 0.003)
     
-    # War exhaustion effects (applied even if not at war)
+    
     if war_exhaustion > 0 and not at_war:
         tax_efficiency_mod -= war_exhaustion * 0.001
         unrest_change += war_exhaustion * 0.1
@@ -146,7 +142,7 @@ def calculate_political_modifiers(cursor, country_code):
         'corruption_change': corruption_change,
         'war_exhaustion_change': war_exhaustion_change,
         'population_change': population_change,
-        # Include raw values for calculations and debugging
+        
         'stability': stability,
         'unrest': unrest,
         'corruption': corruption,
@@ -188,11 +184,11 @@ def update_province_populations(cursor, country_code, net_pop_change):
     if total_current_pop == 0:
         return
     
-    # Distribute proportionally with rounding
+    
     remaining = net_pop_change
     for i, (province_id, pop) in enumerate(provinces):
         if i == len(provinces) - 1:
-            # Last province gets whatever remains to ensure total matches
+            
             pop_change = remaining
         else:
             share = pop / total_current_pop
@@ -200,8 +196,6 @@ def update_province_populations(cursor, country_code, net_pop_change):
         new_pop = max(0, pop + pop_change)
         cursor.execute("UPDATE provinces SET population = ? WHERE id = ?", (new_pop, province_id))
         remaining -= pop_change
-
-# ================== MODIFIER SYSTEM ==================
 
 def get_country_modifier(cursor, country, key):
     cursor.execute("SELECT default_value FROM modifiers WHERE modifier_key = ?", (key,))
@@ -217,7 +211,6 @@ def get_country_modifier(cursor, country, key):
 
     return base_value * (1 + country_value)
 
-
 def get_building_country_modifier(cursor, country, key):
     cursor.execute("""
         SELECT COALESCE(SUM(be.value * pb.amount), 0)
@@ -231,19 +224,13 @@ def get_building_country_modifier(cursor, country, key):
 
     return 1 + (cursor.fetchone()[0] or 0.0)
 
-# ================== DEMOGRAPHICS ==================
-
 def get_population(cursor, country):
     cursor.execute("SELECT SUM(population) FROM provinces WHERE owner_country_code = ?", (country,))
     return cursor.fetchone()[0] or 0
 
-
 def get_province_count(cursor, country):
     cursor.execute("SELECT COUNT(*) FROM provinces WHERE owner_country_code = ?", (country,))
     return cursor.fetchone()[0] or 0
-
-
-# ================== MILITARY ==================
 
 def get_navy_upkeep(cursor, country):
     """Get upkeep cost for navy units only."""
@@ -255,7 +242,6 @@ def get_navy_upkeep(cursor, country):
     """, (country,))
     return cursor.fetchone()[0] or 0
 
-
 def get_land_military_upkeep(cursor, country):
     """Get upkeep cost for land military units only."""
     cursor.execute("""
@@ -266,11 +252,9 @@ def get_land_military_upkeep(cursor, country):
     """, (country,))
     return cursor.fetchone()[0] or 0
 
-
 def get_military_upkeep(cursor, country):
     """Get total military upkeep (land units only, for backward compatibility)."""
     return get_land_military_upkeep(cursor, country)
-
 
 def get_total_land_units(cursor, country):
     """Get total count of land military units (excluding navy)."""
@@ -282,7 +266,6 @@ def get_total_land_units(cursor, country):
     """, (country,))
     return cursor.fetchone()[0] or 0
 
-
 def get_total_navy_units(cursor, country):
     """Get total count of navy units."""
     cursor.execute("""
@@ -293,7 +276,6 @@ def get_total_navy_units(cursor, country):
     """, (country,))
     return cursor.fetchone()[0] or 0
 
-
 def get_coastal_province_count(cursor, country):
     """Get count of coastal provinces (is_naval = 1)."""
     cursor.execute("""
@@ -302,7 +284,6 @@ def get_coastal_province_count(cursor, country):
         WHERE owner_country_code = ? AND is_naval = 1
     """, (country,))
     return cursor.fetchone()[0] or 0
-
 
 def get_navy_unit_cap(cursor, country, coastal_multiplier=10):
     """
@@ -317,11 +298,11 @@ def get_navy_unit_cap(cursor, country, coastal_multiplier=10):
         Maximum allowed navy units for this country
     """
     coastal_count = get_coastal_province_count(cursor, country)
-    # Read from config if you want to make it configurable
+    
     config = configparser.ConfigParser()
     config.read("config.ini")
     
-    # Default: 10 units per coastal province
+    
     multiplier = int(config.get("military", "naval_cap_per_coastal_province", fallback=10))
     return coastal_count * multiplier
 
@@ -339,9 +320,6 @@ def validate_navy_cap(cursor, country):
         "coastal_provinces": get_coastal_province_count(cursor, country)
     }
 
-
-# ================== BUILDING ECONOMY ==================
-
 def get_building_economy(cursor, country):
     cursor.execute("""
         SELECT 
@@ -356,7 +334,6 @@ def get_building_economy(cursor, country):
     income, upkeep = cursor.fetchone()
     return income or 0, upkeep or 0
 
-# =================== RESOURCES ===================
 def get_resource_production(cursor, country):
     """Calculate resource production for a country.
     
@@ -382,7 +359,6 @@ def get_resource_production(cursor, country):
         for resource_id, province_count in cursor.fetchall()
     }
 
-
 def ensure_country_resource_rows(cursor):
     """Ensure country_resources has one row per country/resource pair."""
     cursor.execute("""
@@ -391,7 +367,6 @@ def ensure_country_resource_rows(cursor):
         FROM countries c
         CROSS JOIN resources r
     """)
-
 
 def apply_resource_production(cursor, country, production, resource_cap):
     """Apply production to stockpile, respecting total cap per country."""
@@ -419,7 +394,6 @@ def apply_resource_production(cursor, country, production, resource_cap):
 
     return actually_added
 
-
 def get_resource_ids_by_name(cursor, resource_names):
     """Resolve resource names to ids, preserving requested order."""
     if not resource_names:
@@ -432,11 +406,10 @@ def get_resource_ids_by_name(cursor, resource_names):
     name_to_id = {name: rid for rid, name in cursor.fetchall()}
     return [name_to_id[name] for name in resource_names if name in name_to_id]
 
-
 def consume_food_resources(cursor, country, population, food_resource_ids):
     """Consume food stockpiles for the year and return shortage metrics."""
     raw_required_food = (population / 1000) * FOOD_PER_1000_POP
-    # Round halves up (not banker's rounding) to keep demand predictable.
+    
     required_food = max(0, int(math.floor(raw_required_food + 0.5)))
     if required_food == 0 or not food_resource_ids:
         return {
@@ -462,7 +435,7 @@ def consume_food_resources(cursor, country, population, food_resource_ids):
     remaining_need = required_food
     consumed_by_resource = {}
 
-    # Consume in configured priority order
+    
     for resource_id in food_resource_ids:
         stockpile = stockpile_map.get(resource_id, 0)
         if remaining_need <= 0:
@@ -492,8 +465,6 @@ def consume_food_resources(cursor, country, population, food_resource_ids):
         "consumed_by_resource": consumed_by_resource
     }
 
-# ================== ECONOMY TICK ==================
-
 def economy_tick():
     conn = get_connection()
     conn.execute("PRAGMA foreign_keys = ON;")
@@ -503,7 +474,7 @@ def economy_tick():
     if not validate_political_data(cursor):
         conn.close()
         return
-    # Keep resource stockpiles integer-only even if old runs introduced fractions.
+    
     cursor.execute("UPDATE country_resources SET stockpile = CAST(stockpile AS INTEGER)")
     ensure_country_resource_rows(cursor)
     
@@ -515,7 +486,7 @@ def economy_tick():
     print("\n=== ECONOMY TICK START ===")
     
     for country in countries:
-        # Get base economy data
+        
         cursor.execute("""
             SELECT treasury, tax_rate
             FROM country_economy
@@ -527,17 +498,13 @@ def economy_tick():
             continue
         
         treasury, tax_rate = row
-        
-        # Get population and provinces
+          
         population = get_population(cursor, country)
         provinces = get_province_count(cursor, country)
         
-        # Calculate political modifiers
         political_mods = calculate_political_modifiers(cursor, country)
         if not political_mods:
-            continue
-        
-        # --- Apply population growth (add to population_change) ---
+            continue     
         pop_growth, pop_growth_rate = calculate_population_growth(
             population,
             political_mods['stability'],
@@ -545,9 +512,55 @@ def economy_tick():
             political_mods['corruption']
         )
         political_mods['population_change'] += pop_growth
-
-        # --- Produce and consume resources before final economy math ---
         production = get_resource_production(cursor, country)
+        
+        building_livestock = get_building_country_modifier(cursor, country, "prod_livestock")
+        building_grain = get_building_country_modifier(cursor, country, "prod_grain")
+        building_slaves = get_building_country_modifier(cursor, country, "prod_slaves")
+        building_base_metals = get_building_country_modifier(cursor, country, "prod_base_metals")
+        building_iron = get_building_country_modifier(cursor, country, "prod_iron")
+        building_stone = get_building_country_modifier(cursor, country, "prod_stone")
+        building_wood = get_building_country_modifier(cursor, country, "prod_wood")
+        building_cloth = get_building_country_modifier(cursor, country, "prod_cloth")
+        building_wine = get_building_country_modifier(cursor, country, "prod_wine")
+        building_honey = get_building_country_modifier(cursor, country, "prod_honey")
+        building_olives = get_building_country_modifier(cursor, country, "prod_olives")
+
+        livestock_id = get_resource_ids_by_name(cursor, ["livestock"])[0] if get_resource_ids_by_name(cursor, ["livestock"]) else None
+        grain_id = get_resource_ids_by_name(cursor, ["grain"])[0] if get_resource_ids_by_name(cursor, ["grain"]) else None
+        slaves_id = get_resource_ids_by_name(cursor, ["slaves"])[0] if get_resource_ids_by_name(cursor, ["slaves"]) else None
+        base_metals_id = get_resource_ids_by_name(cursor, ["base_metals"])[0] if get_resource_ids_by_name(cursor, ["base_metals"]) else None
+        iron_id = get_resource_ids_by_name(cursor, ["iron"])[0] if get_resource_ids_by_name(cursor, ["iron"]) else None
+        stone_id = get_resource_ids_by_name(cursor, ["stone"])[0] if get_resource_ids_by_name(cursor, ["stone"]) else None
+        wood_id = get_resource_ids_by_name(cursor, ["wood"])[0] if get_resource_ids_by_name(cursor, ["wood"]) else None
+        cloth_id = get_resource_ids_by_name(cursor, ["cloth"])[0] if get_resource_ids_by_name(cursor, ["cloth"]) else None
+        wine_id = get_resource_ids_by_name(cursor, ["wine"])[0] if get_resource_ids_by_name(cursor, ["wine"]) else None
+        honey_id = get_resource_ids_by_name(cursor, ["honey"])[0] if get_resource_ids_by_name(cursor, ["honey"]) else None
+        olives_id = get_resource_ids_by_name(cursor, ["olives"])[0] if get_resource_ids_by_name(cursor, ["olives"]) else None
+        
+        if livestock_id and building_livestock > 0:
+            production[livestock_id] = production.get(livestock_id, 0) + building_livestock
+        if grain_id and building_grain > 0:
+            production[grain_id] = production.get(grain_id, 0) + building_grain
+        if slaves_id and building_slaves > 0:
+            production[slaves_id] = production.get(slaves_id, 0) + building_slaves
+        if base_metals_id and building_base_metals > 0:
+            production[base_metals_id] = production.get(base_metals_id, 0) + building_base_metals
+        if iron_id and building_iron > 0:
+            production[iron_id] = production.get(iron_id, 0) + building_iron
+        if stone_id and building_stone > 0:
+            production[stone_id] = production.get(stone_id, 0) + building_stone
+        if wood_id and building_wood > 0:
+            production[wood_id] = production.get(wood_id, 0) + building_wood
+        if cloth_id and building_cloth > 0:
+            production[cloth_id] = production.get(cloth_id, 0) + building_cloth
+        if wine_id and building_wine > 0:
+            production[wine_id] = production.get(wine_id, 0) + building_wine
+        if honey_id and building_honey > 0:
+            production[honey_id] = production.get(honey_id, 0) + building_honey
+        if olives_id and building_olives > 0:
+            production[olives_id] = production.get(olives_id, 0) + building_olives
+        
         resource_cap = provinces * RESOURCE_CAP_PER_PROVINCE
         actually_added = apply_resource_production(cursor, country, production, resource_cap)
         food_result = consume_food_resources(cursor, country, population, food_resource_ids)
@@ -556,14 +569,14 @@ def economy_tick():
         food_unrest_increase = food_shortage_ratio * FOOD_SHORTAGE_UNREST_INCREASE_MAX
         political_mods['unrest_change'] += food_unrest_increase
         
-        # --- Apply modifiers to existing calculations ---
+        
         tax_eff = get_country_modifier(cursor, country, "tax_efficiency")
         tax_eff *= get_building_country_modifier(cursor, country, "tax_efficiency")
         tax_eff *= political_mods['tax_efficiency_mod']
         
         admin_mod = get_country_modifier(cursor, country, "admin_cost_modifier")
         admin_mod *= get_building_country_modifier(cursor, country, "admin_cost_modifier")
-        # Higher admin_efficiency should reduce costs, not increase them.
+        
         admin_eff = get_country_modifier(cursor, country, "admin_efficiency")
         admin_eff *= get_building_country_modifier(cursor, country, "admin_efficiency")
         admin_mod /= max(0.0001, admin_eff)
@@ -572,11 +585,11 @@ def economy_tick():
         upkeep_mod = get_country_modifier(cursor, country, "military_upkeep_modifier")
         upkeep_mod *= political_mods['military_upkeep_mod']
         
-        # Existing calculations
+        
         base_tax = population * float(config["economy"]["base_tax_per_pop"])
         tax_income = base_tax * tax_rate * tax_eff
         
-        # Apply corruption tax loss using raw corruption value
+        
         tax_income_after_corruption = tax_income * (1 - political_mods['corruption'] * 0.5)
         tax_income_after_corruption *= food_tax_multiplier
         
@@ -595,7 +608,7 @@ def economy_tick():
         building_income_mult *= get_building_country_modifier(cursor, country, "production_efficiency")
         building_income = building_income_raw * building_income_mult
         
-        # --- Economic growth calculation ---
+        
         base_growth = float(config["politics"]["base_economic_growth"])
         growth_stability = (political_mods['stability'] - 50) * float(config["politics"]["economic_growth_stability_factor"])
         growth_unrest = -political_mods['unrest'] * float(config["politics"]["economic_growth_unrest_factor"])
@@ -609,18 +622,18 @@ def economy_tick():
         productive_income_base = max(0, tax_income_after_corruption + building_income)
         growth_amount = int(productive_income_base * total_growth_rate)
         
-        # --- Calculate totals including growth as income ---
+        
         total_income = int(tax_income_after_corruption + building_income + growth_amount)
         total_expenses = int(administration_cost + military_upkeep + building_upkeep)
         new_treasury = treasury + total_income - total_expenses
         
-        # --- Compute new political values for display ---
+        
         old_stability = political_mods['stability']
         old_unrest = political_mods['unrest']
         old_corruption = political_mods['corruption']
         old_war_exhaustion = political_mods['war_exhaustion']
         
-        # Load bounds from config
+        
         stability_min, stability_max = map(float, config["bounds"].get("stability_bounds", "0,100").split(','))
         unrest_min, unrest_max = map(float, config["bounds"].get("unrest_bounds", "0,100").split(','))
         corr_min, corr_max = map(float, config["bounds"]["corruption_bounds"].split(','))
@@ -631,10 +644,10 @@ def economy_tick():
         new_corruption = max(corr_min, min(corr_max, old_corruption + political_mods['corruption_change']))
         new_war_exhaustion = max(war_min, min(war_max, old_war_exhaustion + political_mods['war_exhaustion_change']))
         
-        # --- Update province populations ---
+        
         update_province_populations(cursor, country, political_mods['population_change'])
         
-        # --- Update country economy ---
+        
         cursor.execute("SELECT COALESCE(SUM(population), 0) FROM provinces WHERE owner_country_code = ?", (country,))
         new_total_population = cursor.fetchone()[0] or 0
         cursor.execute("""
@@ -664,7 +677,7 @@ def economy_tick():
             country
         ))
         
-        # --- Update political state ---
+        
         cursor.execute("""
             UPDATE countries SET
                 stability = ?,
@@ -682,7 +695,7 @@ def economy_tick():
             ORDER BY r.name
         """, (country,)).fetchall()
         
-        # --- Prepare debug output data ---
+        
         total_land_units = get_total_land_units(cursor, country)
         unit_limit_mod = get_country_modifier(cursor, country, "military_unit_limit_mult")
         unit_limit_mod *= get_building_country_modifier(cursor, country, "military_unit_limit_mult")

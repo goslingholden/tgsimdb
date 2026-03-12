@@ -2,3 +2,15 @@ building_name,scope,modifier_key,value
 Porto,country,navy_upkeep_modifier,1.1
 Caserma,country,military_upkeep_modifier,1.1
 Campo di addestramento,country,discipline,5
+Fattoria,country,prod_livestock,1
+Fattoria,country,prod_grain,1
+Tenuta di schiavi,country,prod_slaves,1
+Miniera,country,prod_base_metals,1
+Fonderia,country,prod_base_metals,2
+Fonderia,country,prod_iron,1
+Cava,country,prod_stone,3
+Segheria,country,prod_wood,3
+Sartoria,country,prod_cloth,3
+Insediamento rurale,country,prod_wine,1
+Insediamento rurale,country,prod_honey,1
+Insediamento rurale,country,prod_olives,1

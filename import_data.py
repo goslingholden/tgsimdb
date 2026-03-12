@@ -17,7 +17,7 @@ from economy_tick import (
     get_coastal_province_count,
 )
 
-# ---------------- LOAD CONFIG ----------------
+
 config = configparser.ConfigParser()
 config.read("config.ini")
 
@@ -29,7 +29,7 @@ RESOURCE_CAP_PER_PROVINCE = int(config["resources"]["resource_cap_per_province"]
 POP_PER_UNIT = int(config["military"]["pop_per_unit"])
 BASE_UNIT_RATIO = float(config["military"]["base_unit_ratio"])
 
-# -------------------- COUNTRIES --------------------
+
 def import_countries(cursor):
     with open("data/countries.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -66,7 +66,7 @@ def import_countries(cursor):
                 int(row.get("war_exhaustion", 0))
             ))
 
-# -------------------- PROVINCES --------------------
+
 def import_provinces(cursor):
     with open("data/provinces.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -107,7 +107,7 @@ def import_provinces(cursor):
                 resource_id
             ))
 
-# -------------- DEFAULT BUILDINGS -------------
+
 def import_building_types(cursor):
     with open("data/building_types.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -133,7 +133,7 @@ def import_building_types(cursor):
                 row.get("description", "")
             ))
 
-# ------------- PROVINCE BUILDINGS ------------
+
 def import_province_buildings(cursor):
     with open("data/province_buildings.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -156,7 +156,7 @@ def import_province_buildings(cursor):
                 VALUES (?, ?, ?)
             """, (province_id[0], building_id[0], amount))
 
-# ------------ COUNTRY ECONOMY -----------------
+
 def import_country_economy(cursor):
     with open("data/country_economy.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -175,7 +175,7 @@ def import_country_economy(cursor):
                     float(row.get("tax_rate", 0) or 0)
                 ))
 
-# ------------ UNIT TYPES -----------------
+
 def import_unit_types(cursor):
     with open("data/unit_types.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -200,7 +200,7 @@ def import_unit_types(cursor):
                 int(row.get("defense", 0) or 0)
             ))
 
-# ------------ COUNTRY UNITS -----------------
+
 def import_country_units(cursor):
     with open("data/country_units.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -220,7 +220,7 @@ def import_country_units(cursor):
                 VALUES (?, ?, ?)
             """, (country, unit_id[0], amount))
 
-# --------------- MODIFIERS -----------------
+
 def import_modifiers(cursor):
     with open("data/modifiers.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -239,7 +239,7 @@ def import_modifiers(cursor):
                 float(row.get("default_value", 1.0) or 1.0)
             ))
 
-# --------------- BUILDING EFFECTS -----------------
+
 def import_building_effects(cursor):
     with open("data/building_effects.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -266,7 +266,7 @@ def import_building_effects(cursor):
                     value = excluded.value
             """, (building_type_id, scope, modifier_key, value))
 
-# --------------- COUNTRY MODIFIERS -----------------
+
 def import_country_modifiers(cursor):
     with open("data/country_modifiers.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -284,7 +284,7 @@ def import_country_modifiers(cursor):
                     float(row.get("value", 0.0) or 0.0)
                 ))
 
-# -------------------- RESOURCES --------------------
+
 def import_resources(cursor):
     with open("data/resources.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -299,7 +299,7 @@ def import_resources(cursor):
                 row.get("description", "")
             ))
 
-# -------- BUILDING RESOURCE COSTS ----------
+
 def import_building_resource_costs(cursor):
     with open("data/building_resource_cost.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -328,7 +328,7 @@ def import_building_resource_costs(cursor):
             """, (building[0], resource[0], amount_per_unit))
 
 
-# -------- UNIT RESOURCE COSTS --------------
+
 def import_unit_resource_costs(cursor):
     with open("data/unit_resource_costs.csv", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -460,15 +460,15 @@ def import_economy_snapshot(cursor):
             country
         ))
 
-        # --- Military unit calculations ---
+        
         land_military_upkeep = get_land_military_upkeep(cursor, country)
         navy_upkeep_raw = get_navy_upkeep(cursor, country)
         land_military_upkeep_final = land_military_upkeep * upkeep_mod
         navy_upkeep_mod = get_country_modifier(cursor, country, "navy_upkeep_modifier")
-        navy_upkeep_mod *= 1.0  # No political mods in import snapshot
+        navy_upkeep_mod *= 1.0  
         navy_military_upkeep_final = navy_upkeep_raw * navy_upkeep_mod
         
-        # --- Navy info ---
+        
         total_navy_units = get_total_navy_units(cursor, country)
         coastal_provinces = get_coastal_province_count(cursor, country)
         config_local = configparser.ConfigParser()
@@ -476,8 +476,22 @@ def import_economy_snapshot(cursor):
         naval_cap_multiplier = int(config_local.get("military", "naval_cap_per_coastal_province", fallback=10))
         navy_cap = coastal_provinces * naval_cap_multiplier
         
-        # --- Land units ---
+        
         total_land_units = get_total_land_units(cursor, country)
+
+        # Get resource names for display
+        cursor.execute("SELECT id, name FROM resources")
+        resource_names = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # Format resource production for display
+        if production:
+            resource_lines = []
+            for resource_id, amount in sorted(production.items()):
+                resource_name = resource_names.get(resource_id, f"ID_{resource_id}")
+                resource_lines.append(f"{resource_name}: {amount}")
+            resource_display = ", ".join(resource_lines)
+        else:
+            resource_display = "None"
 
         print(
             f"\n=== {country} DEBUG INFO ==="
@@ -494,12 +508,12 @@ def import_economy_snapshot(cursor):
             f"\nTotal Expenses: {total_expenses:,}"
             f"\nTreasury: {treasury:,} → {new_treasury:,}"
             f"\nResource Cap: {resource_cap:,} | Total Stockpile: {stockpile_total:,}"
-            f"\nResource Production: {production if production else 'None'}"
+            f"\nResource Production: {resource_display}"
             f"\n--------------------------------------------------")
 
     print("✅ IMPORT ECONOMY COMPLETE")
 
-# -------------------- MAIN --------------------
+
 def main():
     conn = get_connection()
     conn.execute("PRAGMA foreign_keys = ON;")
