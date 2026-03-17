@@ -12,6 +12,11 @@ military_upkeep_modifier,Military upkeep multiplier,1
 navy_upkeep_modifier,Navy upkeep modifier,1
 corruption,Corruption level affecting tax collection,0
 economic_growth,Economic growth rate,0
+stability_growth,Stability growth per turn,0
+unrest_reduction,Unrest reduction per turn,0
+resource_cap_bonus,Additional resource cap,0
+land_unit_cap_bonus,Additional land unit capacity,0
+navy_unit_cap_bonus,Additional navy unit capacity,0
 prod_livestock,Adds production of livestock,0
 prod_grain,Adds production of grain,0
 prod_slaves,Adds production of slaves,0

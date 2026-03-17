@@ -1,5 +1,6 @@
 from db_utils import get_connection
 import configparser
+from economy_tick import get_land_unit_cap, get_navy_unit_cap
 
 
 
@@ -104,6 +105,36 @@ def get_unit_resource_costs(cursor, unit_type_id, amount):
         WHERE unit_type_id = ?
     """, (unit_type_id,))
     return {resource_id: per_unit * amount for resource_id, per_unit in cursor.fetchall()}
+
+
+def get_unit_category(cursor, unit_type_id):
+    cursor.execute("SELECT unit_category FROM unit_types WHERE id = ?", (unit_type_id,))
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def get_current_unit_count(cursor, country_code, unit_category):
+    cursor.execute("""
+        SELECT COALESCE(SUM(cu.amount), 0)
+        FROM country_units cu
+        JOIN unit_types ut ON cu.unit_type_id = ut.id
+        WHERE cu.country_code = ? AND ut.unit_category = ?
+    """, (country_code, unit_category))
+    return cursor.fetchone()[0] or 0
+
+
+def get_move_state(cursor):
+    return {
+        "treasuries": get_country_treasuries(cursor),
+        "resource_stockpiles": get_country_resource_stockpiles(cursor),
+        "unit_counts": {
+            country_code: {
+                "land": get_current_unit_count(cursor, country_code, "land"),
+                "naval": get_current_unit_count(cursor, country_code, "naval"),
+            }
+            for country_code in get_country_treasuries(cursor)
+        },
+    }
 
 
 def reserve_resource_costs(resource_stockpiles, country_code, resource_costs):
@@ -257,7 +288,7 @@ def validate_political_move(cursor, move, treasuries):
     return True, "OK"
 
 
-def validate_moves(cursor, moves):
+def validate_moves(cursor, moves, state=None):
     """
     Validates all moves and returns a list of approved ones with __cost set.
     Treasuries are tracked in a snapshot so sequential moves from the same
@@ -265,8 +296,10 @@ def validate_moves(cursor, moves):
     """
     approved = []
     rejected = []
-    treasuries = get_country_treasuries(cursor)
-    resource_stockpiles = get_country_resource_stockpiles(cursor)
+    state = state or get_move_state(cursor)
+    treasuries = state["treasuries"]
+    resource_stockpiles = state["resource_stockpiles"]
+    unit_counts = state["unit_counts"]
 
     for move in moves:
         country = move["country_code"]
@@ -335,6 +368,28 @@ def validate_moves(cursor, moves):
             cursor.execute("SELECT recruitment_cost FROM unit_types WHERE id = ?", (move["target_unit_type_id"],))
             cost = cursor.fetchone()[0] * amt
             resource_costs = get_unit_resource_costs(cursor, move["target_unit_type_id"], amt)
+            unit_category = get_unit_category(cursor, move["target_unit_type_id"])
+            country_units = unit_counts.setdefault(country, {"land": 0, "naval": 0})
+            current_units = country_units.get(unit_category, 0)
+
+            if unit_category == "land":
+                unit_cap = get_land_unit_cap(cursor, country)
+            elif unit_category == "naval":
+                unit_cap = get_navy_unit_cap(cursor, country)
+            else:
+                msg = f"Unknown unit category for unit {move['target_unit_type_id']}"
+                log(f"❌ Move {move['id']}: {msg}")
+                rejected.append((move["id"], msg))
+                continue
+
+            if current_units + amt > unit_cap:
+                msg = (
+                    f"{country} would exceed {unit_category} unit cap "
+                    f"({current_units + amt}/{unit_cap})"
+                )
+                log(f"❌ Move {move['id']}: {msg}")
+                rejected.append((move["id"], msg))
+                continue
 
         else:
             msg = f"Unknown move type '{move['move_type']}'"
@@ -369,6 +424,8 @@ def validate_moves(cursor, moves):
         reserve_resource_costs(resource_stockpiles, country, resource_costs)
         move["__cost"] = cost
         move["__resource_costs"] = resource_costs
+        if move["move_type"] == "recruit":
+            unit_counts[country][unit_category] += amt
         approved.append(move)
 
     return approved, rejected
@@ -392,11 +449,8 @@ def execute_political_move(cursor, move):
     """, (country,))
     stability, unrest, corruption, at_war, war_exhaustion = cursor.fetchone()
     
-    changes = {}
-    
     if move_type == "declare_war":
         cursor.execute("UPDATE countries SET at_war = 1 WHERE code = ?", (country,))
-        changes = {'at_war': 1, 'war_exhaustion': war_exhaustion}
         msg = f"⚔ {country} declared war!"
     
     elif move_type == "make_peace":
@@ -405,7 +459,6 @@ def execute_political_move(cursor, move):
         cursor.execute("""
             UPDATE countries SET at_war = 0, war_exhaustion = ? WHERE code = ?
         """, (new_war_exhaustion, country))
-        changes = {'at_war': 0, 'war_exhaustion': new_war_exhaustion}
         msg = f"☮ {country} made peace (war exhaustion reduced by {reduction})"
     
     elif move_type == "anti_corruption":
@@ -413,7 +466,6 @@ def execute_political_move(cursor, move):
         total_reduction = min(amt * reduction_per_unit, corruption)  
         new_corruption = max(0, corruption - total_reduction)
         cursor.execute("UPDATE countries SET corruption = ? WHERE code = ?", (new_corruption, country))
-        changes = {'corruption': new_corruption}
         msg = f"🔍 {country} reduced corruption by {total_reduction:.3f} (cost: {move['__cost']})"
     
     elif move_type == "stabilize":
@@ -421,7 +473,6 @@ def execute_political_move(cursor, move):
         total_increase = min(amt * increase_per_unit, 100 - stability)  
         new_stability = min(100, stability + total_increase)
         cursor.execute("UPDATE countries SET stability = ? WHERE code = ?", (new_stability, country))
-        changes = {'stability': new_stability}
         msg = f"📊 {country} increased stability by {total_increase} (cost: {move['__cost']})"
     
     elif move_type == "reduce_unrest":
@@ -429,7 +480,6 @@ def execute_political_move(cursor, move):
         total_reduction = min(amt * reduction_per_unit, unrest)  
         new_unrest = max(0, unrest - total_reduction)
         cursor.execute("UPDATE countries SET unrest = ? WHERE code = ?", (new_unrest, country))
-        changes = {'unrest': new_unrest}
         msg = f"📉 {country} reduced unrest by {total_reduction} (cost: {move['__cost']})"
     
     elif move_type == "propaganda_campaign":
@@ -439,17 +489,15 @@ def execute_political_move(cursor, move):
         new_unrest = max(0, unrest - unrest_reduction)
         cursor.execute("UPDATE countries SET stability = ?, unrest = ? WHERE code = ?", 
                       (new_stability, new_unrest, country))
-        changes = {'stability': new_stability, 'unrest': new_unrest}
         msg = f"📢 {country} propaganda: stability +{stab_increase}, unrest -{unrest_reduction} (cost: {move['__cost']})"
     
     elif move_type == "war_effort":
         reduction = amt * float(config["political_actions"]["war_effort_exhaustion_reduction"])
         new_war_exhaustion = max(0, war_exhaustion - reduction)
         cursor.execute("UPDATE countries SET war_exhaustion = ? WHERE code = ?", (new_war_exhaustion, country))
-        changes = {'war_exhaustion': new_war_exhaustion}
         msg = f"💪 {country} war effort reduced exhaustion by {reduction} (cost: {move['__cost']})"
     
-    return msg, changes
+    return msg
 
 
 def execute_move(cursor, move):
@@ -524,8 +572,7 @@ def execute_move(cursor, move):
                       "stabilize", "reduce_unrest", "propaganda_campaign", "war_effort"]
     
     if move["move_type"] in political_moves:
-        msg, changes = execute_political_move(cursor, move)
-        return msg
+        return execute_political_move(cursor, move)
 
     
     if move["move_type"] == "build":
@@ -599,11 +646,11 @@ def process_moves():
         approved_moves, rejected_moves = validate_moves(cursor, moves)
         log(f"\nApproved {len(approved_moves)} moves, rejected {len(rejected_moves)}")
     else:
-        
+        state = get_move_state(cursor)
         approved_moves = []
         rejected_moves = []
         for move in moves:
-            approved, rejected = validate_moves(cursor, [move])
+            approved, rejected = validate_moves(cursor, [move], state=state)
             approved_moves.extend(approved)
             rejected_moves.extend(rejected)
         log(f"\nApproved {len(approved_moves)} moves (individual validation mode)")

@@ -6,13 +6,92 @@ Uso: python export_it.py <codice_paese>
 Esempio: python export_it.py ROM
 """
 
-import sqlite3
 import sys
 import os
 from datetime import datetime
 from db_utils import get_connection
+from economy_tick import get_land_unit_cap, get_navy_unit_cap
 
-DB_FILE = "world.db"
+
+GOVERNMENT_TRANSLATIONS = {
+    "monarchy": "Monarchia",
+    "republic": "Repubblica",
+    "tribe": "Tribù",
+}
+
+RANK_TRANSLATIONS = {
+    "city": "Città",
+    "settlement": "Insediamento",
+}
+
+TERRAIN_TRANSLATIONS = {
+    "desert": "Deserto",
+    "farmland": "Campi coltivati",
+    "farmlands": "Campi coltivati",
+    "forest": "Foresta",
+    "hills": "Colline",
+    "marsh": "Palude",
+    "mountains": "Montagne",
+    "plains": "Pianure",
+}
+
+RESOURCE_TRANSLATIONS = {
+    "base_metals": "Metalli comuni",
+    "cloth": "Stoffa",
+    "dyes": "Tinture",
+    "earthenware": "Terracotta",
+    "elephants": "Elefanti",
+    "glass": "Vetro",
+    "grain": "Grano",
+    "honey": "Miele",
+    "horses": "Cavalli",
+    "iron": "Ferro",
+    "leather": "Cuoio",
+    "livestock": "Bestiame",
+    "marble": "Marmo",
+    "olives": "Olive",
+    "precious_metals": "Metalli preziosi",
+    "salt": "Sale",
+    "slaves": "Schiavi",
+    "stone": "Pietra",
+    "wine": "Vino",
+    "wood": "Legname",
+}
+
+MODIFIER_DESCRIPTION_TRANSLATIONS = {
+    "Administrative cost multiplier": "Moltiplicatore dei costi amministrativi",
+    "Administration cost reduction": "Riduzione dei costi amministrativi",
+    "Corruption level affecting tax collection": "Livello di corruzione che influisce sulla riscossione fiscale",
+    "corruption reduction": "Riduzione della corruzione",
+    "Mil bonus": "Bonus militare",
+    "Economic growth rate": "Tasso di crescita economica",
+    "Additional land unit capacity": "Capacità aggiuntiva per unità terrestri",
+    "Military unit cap multiplier": "Moltiplicatore del limite delle unità militari",
+    "Military upkeep multiplier": "Moltiplicatore del mantenimento militare",
+    "Additional navy unit capacity": "Capacità aggiuntiva per unità navali",
+    "Navy upkeep modifier": "Modificatore del mantenimento navale",
+    "Rate of pop growth per turn": "Tasso di crescita della popolazione per turno",
+    "Adds production of base metals": "Aggiunge produzione di metalli comuni",
+    "Adds production of cloth": "Aggiunge produzione di stoffa",
+    "Adds production of grain": "Aggiunge produzione di grano",
+    "Adds production of honey": "Aggiunge produzione di miele",
+    "Adds production of iron": "Aggiunge produzione di ferro",
+    "Adds production of livestock": "Aggiunge produzione di bestiame",
+    "Adds production of olives": "Aggiunge produzione di olive",
+    "Adds production of slaves": "Aggiunge produzione di schiavi",
+    "Adds production of stone": "Aggiunge produzione di pietra",
+    "Adds production of wine": "Aggiunge produzione di vino",
+    "Adds production of wood": "Aggiunge produzione di legname",
+    "Province production multiplier": "Moltiplicatore della produzione provinciale",
+    "Additional resource cap": "Capacità aggiuntiva di risorse",
+    "Stability growth per turn": "Crescita della stabilità per turno",
+    "Tax income multiplier": "Moltiplicatore delle entrate fiscali",
+    "Unrest reduction per turn": "Riduzione dei disordini per turno",
+}
+
+
+def translate_value(value, translations):
+    return translations.get(value, value)
 
 def format_number(num):
     """Formatta i numeri con le virgole per leggibilità."""
@@ -58,7 +137,7 @@ def get_country_info(conn, country_code):
     
     # Ottieni unità militari
     cursor.execute("""
-        SELECT ut.name, cu.amount, ut.recruitment_cost, ut.upkeep_cost
+        SELECT ut.name, ut.unit_category, cu.amount, ut.recruitment_cost, ut.upkeep_cost
         FROM country_units cu
         JOIN unit_types ut ON cu.unit_type_id = ut.id
         WHERE cu.country_code = ?
@@ -70,9 +149,10 @@ def get_country_info(conn, country_code):
     for unit in units:
         country_data['units'].append({
             'name': unit[0],
-            'amount': unit[1],
-            'recruitment_cost': unit[2],
-            'upkeep_cost': unit[3]
+            'category': unit[1],
+            'amount': unit[2],
+            'recruitment_cost': unit[3],
+            'upkeep_cost': unit[4]
         })
     
     # Ottieni risorse e scorte
@@ -130,8 +210,36 @@ def get_country_info(conn, country_code):
             'terrain': prov[5],
             'is_naval': bool(prov[6])
         })
-    
+    country_data['land_unit_cap'] = get_land_unit_cap(cursor, country_code)
+    country_data['navy_unit_cap'] = get_navy_unit_cap(cursor, country_code)
+
     return country_data
+
+
+def append_unit_section(lines, title, units, cap_label, unit_cap):
+    lines.append(title)
+    lines.append("-" * 40)
+    total_units = sum(unit['amount'] for unit in units)
+    total_upkeep = 0
+    lines.append(f"{cap_label}: {format_number(total_units)} / {format_number(unit_cap)}")
+    lines.append("")
+
+    if not units:
+        lines.append("  Nessuna")
+        lines.append("")
+        return
+
+    for unit in units:
+        upkeep = unit['amount'] * unit['upkeep_cost']
+        total_upkeep += upkeep
+        lines.append(f"  {unit['name']}: {format_number(unit['amount'])} unità")
+        lines.append(
+            f"    Costo Reclutamento: {format_number(unit['recruitment_cost'])} | "
+            f"Manutenzione per unità: {format_number(unit['upkeep_cost'])} | "
+            f"Manutenzione Totale: {format_number(upkeep)}"
+        )
+    lines.append(f"Manutenzione Totale: {format_number(total_upkeep)}")
+    lines.append("")
 
 def generate_report(country_data):
     """Genera un report leggibile da dati del paese."""
@@ -147,8 +255,8 @@ def generate_report(country_data):
     lines.append("INFORMAZIONI DI BASE")
     lines.append("-" * 40)
     lines.append(f"Capitale:        {country_data['capital']}")
-    lines.append(f"Governo:         {country_data['government']}")
-    lines.append(f"Culture:         {country_data['culture']}")
+    lines.append(f"Governo:         {translate_value(country_data['government'], GOVERNMENT_TRANSLATIONS)}")
+    lines.append(f"Cultura:         {country_data['culture']}")
     lines.append(f"Gruppo Culturale: {country_data['culture_group']}")
     lines.append(f"Religione:       {country_data['religion']}")
     lines.append("")
@@ -188,23 +296,20 @@ def generate_report(country_data):
     
     # Militare
     if country_data['units']:
+        land_units = [unit for unit in country_data['units'] if unit['category'] == 'land']
+        naval_units = [unit for unit in country_data['units'] if unit['category'] == 'naval']
         lines.append("FORZE ARMATE")
         lines.append("-" * 40)
-        total_upkeep = 0
-        for unit in country_data['units']:
-            upkeep = unit['amount'] * unit['upkeep_cost']
-            total_upkeep += upkeep
-            lines.append(f"  {unit['name']}: {format_number(unit['amount'])} unità")
-            lines.append(f"    Costo Reclutamento: {format_number(unit['recruitment_cost'])} | Manutenzione per unità: {format_number(unit['upkeep_cost'])} | Manutenzione Totale: {format_number(upkeep)}")
-        lines.append(f"Manutenzione Militare Totale: {format_number(total_upkeep)}")
         lines.append("")
+        append_unit_section(lines, "FORZE DI TERRA", land_units, "Limite unità terrestri", country_data['land_unit_cap'])
+        append_unit_section(lines, "FORZE NAVALI", naval_units, "Limite unità navali", country_data['navy_unit_cap'])
     
     # Risorse
     if country_data['resources']:
         lines.append("RISORSE")
         lines.append("-" * 40)
         for res in country_data['resources']:
-            lines.append(f"  {res['name']}: {format_number(res['stockpile'])}")
+            lines.append(f"  {translate_value(res['name'], RESOURCE_TRANSLATIONS)}: {format_number(res['stockpile'])}")
         lines.append("")
     
     # Modificatori
@@ -214,7 +319,7 @@ def generate_report(country_data):
         for mod in country_data['modifiers']:
             value_str = f"{mod['value']:+.2f}" if isinstance(mod['value'], (int, float)) else str(mod['value'])
             lines.append(f"  {mod['key']}: {value_str}")
-            lines.append(f"    {mod['description']}")
+            lines.append(f"    {translate_value(mod['description'], MODIFIER_DESCRIPTION_TRANSLATIONS)}")
         lines.append("")
     
     # Province
@@ -227,9 +332,9 @@ def generate_report(country_data):
         for i, prov in enumerate(country_data['provinces'], 1):
             naval_str = " (Navale)" if prov['is_naval'] else ""
             lines.append(f"{i}. {prov['name']}{naval_str}")
-            lines.append(f"   Popolazione: {format_number(prov['population'])} | Grado: {prov['rank']}")
+            lines.append(f"   Popolazione: {format_number(prov['population'])} | Grado: {translate_value(prov['rank'], RANK_TRANSLATIONS)}")
             lines.append(f"   Cultura: {prov['culture']} | Religione: {prov['religion']}")
-            lines.append(f"   Terreno: {prov['terrain']}")
+            lines.append(f"   Terreno: {translate_value(prov['terrain'], TERRAIN_TRANSLATIONS)}")
             lines.append("")
     
     lines.append("=" * 60)

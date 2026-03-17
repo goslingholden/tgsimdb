@@ -1,7 +1,13 @@
 building_name,scope,modifier_key,value
-Porto,country,navy_upkeep_modifier,1.1
-Caserma,country,military_upkeep_modifier,1.1
+Porto,country,navy_unit_cap_bonus,5
+Caserma,country,land_unit_cap_bonus,2
 Campo di addestramento,country,discipline,5
+Granaio,country,resource_cap_bonus,50
+Magazzino,country,resource_cap_bonus,100
+Mercato,country,economic_growth,0.01
+Foro,country,economic_growth,0.05
+Tribunale,country,stability_growth,1
+Teatro,country,unrest_reduction,1
 Fattoria,country,prod_livestock,1
 Fattoria,country,prod_grain,1
 Tenuta di schiavi,country,prod_slaves,1

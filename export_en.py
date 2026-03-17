@@ -6,13 +6,11 @@ Usage: python export.py <country_code>
 Example: python export.py ROM
 """
 
-import sqlite3
 import sys
 import os
 from datetime import datetime
 from db_utils import get_connection
-
-DB_FILE = "world.db"
+from economy_tick import get_land_unit_cap, get_navy_unit_cap
 
 def format_number(num):
     """Format numbers with commas for readability."""
@@ -58,7 +56,7 @@ def get_country_info(conn, country_code):
     
     # Get military units
     cursor.execute("""
-        SELECT ut.name, cu.amount, ut.recruitment_cost, ut.upkeep_cost
+        SELECT ut.name, ut.unit_category, cu.amount, ut.recruitment_cost, ut.upkeep_cost
         FROM country_units cu
         JOIN unit_types ut ON cu.unit_type_id = ut.id
         WHERE cu.country_code = ?
@@ -70,9 +68,10 @@ def get_country_info(conn, country_code):
     for unit in units:
         country_data['units'].append({
             'name': unit[0],
-            'amount': unit[1],
-            'recruitment_cost': unit[2],
-            'upkeep_cost': unit[3]
+            'category': unit[1],
+            'amount': unit[2],
+            'recruitment_cost': unit[3],
+            'upkeep_cost': unit[4]
         })
     
     # Get resources and stockpiles
@@ -131,7 +130,36 @@ def get_country_info(conn, country_code):
             'is_naval': bool(prov[6])
         })
     
+    country_data['land_unit_cap'] = get_land_unit_cap(cursor, country_code)
+    country_data['navy_unit_cap'] = get_navy_unit_cap(cursor, country_code)
+
     return country_data
+
+
+def append_unit_section(lines, title, units, cap_label, unit_cap):
+    lines.append(title)
+    lines.append("-" * 40)
+    total_units = sum(unit['amount'] for unit in units)
+    total_upkeep = 0
+    lines.append(f"{cap_label}: {format_number(total_units)} / {format_number(unit_cap)}")
+    lines.append("")
+
+    if not units:
+        lines.append("  None")
+        lines.append("")
+        return
+
+    for unit in units:
+        upkeep = unit['amount'] * unit['upkeep_cost']
+        total_upkeep += upkeep
+        lines.append(f"  {unit['name']}: {format_number(unit['amount'])} units")
+        lines.append(
+            f"    Recruitment Cost: {format_number(unit['recruitment_cost'])} | "
+            f"Upkeep per unit: {format_number(unit['upkeep_cost'])} | "
+            f"Total Upkeep: {format_number(upkeep)}"
+        )
+    lines.append(f"Total Upkeep: {format_number(total_upkeep)}")
+    lines.append("")
 
 def generate_report(country_data):
     """Generate a human-readable report from country data."""
@@ -188,16 +216,13 @@ def generate_report(country_data):
     
     # Military
     if country_data['units']:
+        land_units = [unit for unit in country_data['units'] if unit['category'] == 'land']
+        naval_units = [unit for unit in country_data['units'] if unit['category'] == 'naval']
         lines.append("MILITARY")
         lines.append("-" * 40)
-        total_upkeep = 0
-        for unit in country_data['units']:
-            upkeep = unit['amount'] * unit['upkeep_cost']
-            total_upkeep += upkeep
-            lines.append(f"  {unit['name']}: {format_number(unit['amount'])} units")
-            lines.append(f"    Recruitment Cost: {format_number(unit['recruitment_cost'])} | Upkeep per unit: {format_number(unit['upkeep_cost'])} | Total Upkeep: {format_number(upkeep)}")
-        lines.append(f"Total Military Upkeep: {format_number(total_upkeep)}")
         lines.append("")
+        append_unit_section(lines, "LAND FORCES", land_units, "Land Unit Cap", country_data['land_unit_cap'])
+        append_unit_section(lines, "NAVAL FORCES", naval_units, "Naval Unit Cap", country_data['navy_unit_cap'])
     
     # Resources
     if country_data['resources']:

@@ -15,6 +15,9 @@ from economy_tick import (
     get_total_navy_units,
     get_total_land_units,
     get_coastal_province_count,
+    get_resource_cap,
+    get_land_unit_cap,
+    get_navy_unit_cap,
 )
 
 
@@ -404,9 +407,6 @@ def import_economy_snapshot(cursor):
                     get_building_country_modifier(cursor, country, "admin_efficiency")
         admin_mod /= max(0.0001, admin_eff)
 
-        unit_limit_mod = get_country_modifier(cursor, country, "military_unit_limit_mult") * \
-                         get_building_country_modifier(cursor, country, "military_unit_limit_mult")
-
         upkeep_mod = get_country_modifier(cursor, country, "military_upkeep_modifier") * \
                      get_building_country_modifier(cursor, country, "military_upkeep_modifier")
 
@@ -424,10 +424,8 @@ def import_economy_snapshot(cursor):
         building_income_raw, building_upkeep = get_building_economy(cursor, country)
         building_income = building_income_raw * building_income_mult
 
-        land_unit_limit = int((population * BASE_UNIT_RATIO * unit_limit_mod) / POP_PER_UNIT + 5)
-
         production = get_resource_production(cursor, country)
-        resource_cap = provinces * RESOURCE_CAP_PER_PROVINCE
+        resource_cap = get_resource_cap(cursor, country)
         stockpile_total = cursor.execute(
             "SELECT COALESCE(SUM(stockpile), 0) FROM country_resources WHERE country_code = ?",
             (country,)
@@ -471,12 +469,9 @@ def import_economy_snapshot(cursor):
         
         total_navy_units = get_total_navy_units(cursor, country)
         coastal_provinces = get_coastal_province_count(cursor, country)
-        config_local = configparser.ConfigParser()
-        config_local.read("config.ini")
-        naval_cap_multiplier = int(config_local.get("military", "naval_cap_per_coastal_province", fallback=10))
-        navy_cap = coastal_provinces * naval_cap_multiplier
-        
-        
+        navy_cap = get_navy_unit_cap(cursor, country)
+        land_unit_limit = get_land_unit_cap(cursor, country)
+
         total_land_units = get_total_land_units(cursor, country)
 
         # Get resource names for display

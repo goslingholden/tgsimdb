@@ -224,6 +224,36 @@ def get_building_country_modifier(cursor, country, key):
 
     return 1 + (cursor.fetchone()[0] or 0.0)
 
+
+def get_building_effect_total(cursor, country, key):
+    cursor.execute("""
+        SELECT COALESCE(SUM(be.value * pb.amount), 0)
+        FROM province_buildings pb
+        JOIN building_effects be ON pb.building_type_id = be.building_type_id
+        JOIN provinces p ON pb.province_id = p.id
+        WHERE p.owner_country_code = ?
+        AND be.scope IN ('country', 'province')
+        AND be.modifier_key = ?
+    """, (country, key))
+
+    return cursor.fetchone()[0] or 0.0
+
+
+def get_additive_modifier(cursor, country, key):
+    cursor.execute("SELECT default_value FROM modifiers WHERE modifier_key = ?", (key,))
+    base = cursor.fetchone()
+    base_value = base[0] if base else 0.0
+
+    cursor.execute("""
+        SELECT value FROM country_modifiers
+        WHERE country_code = ? AND modifier_key = ?
+    """, (country, key))
+    row = cursor.fetchone()
+    country_value = row[0] if row else 0.0
+
+    building_value = get_building_effect_total(cursor, country, key)
+    return base_value + country_value + building_value
+
 def get_population(cursor, country):
     cursor.execute("SELECT SUM(population) FROM provinces WHERE owner_country_code = ?", (country,))
     return cursor.fetchone()[0] or 0
@@ -285,26 +315,21 @@ def get_coastal_province_count(cursor, country):
     """, (country,))
     return cursor.fetchone()[0] or 0
 
-def get_navy_unit_cap(cursor, country, coastal_multiplier=10):
-    """
-    Calculate navy unit cap based on coastal provinces.
-    
-    Args:
-        cursor: DB cursor
-        country: Country code
-        coastal_multiplier: Base units per coastal province
-    
-    Returns:
-        Maximum allowed navy units for this country
-    """
+def get_land_unit_cap(cursor, country):
+    population = get_population(cursor, country)
+    unit_limit_mod = get_country_modifier(cursor, country, "military_unit_limit_mult")
+    unit_limit_mod *= get_building_country_modifier(cursor, country, "military_unit_limit_mult")
+    base_cap = int((population * BASE_UNIT_RATIO * unit_limit_mod) / POP_PER_UNIT + 5)
+    bonus_cap = int(get_additive_modifier(cursor, country, "land_unit_cap_bonus"))
+    return base_cap + bonus_cap
+
+
+def get_navy_unit_cap(cursor, country):
+    """Calculate navy unit cap based on coastal provinces."""
     coastal_count = get_coastal_province_count(cursor, country)
-    
-    config = configparser.ConfigParser()
-    config.read("config.ini")
-    
-    
     multiplier = int(config.get("military", "naval_cap_per_coastal_province", fallback=10))
-    return coastal_count * multiplier
+    bonus_cap = int(get_additive_modifier(cursor, country, "navy_unit_cap_bonus"))
+    return (coastal_count * multiplier) + bonus_cap
 
 def validate_navy_cap(cursor, country):
     """Check if navy units exceed cap and return overage info."""
@@ -319,6 +344,13 @@ def validate_navy_cap(cursor, country):
         "overage": overage,
         "coastal_provinces": get_coastal_province_count(cursor, country)
     }
+
+
+def get_resource_cap(cursor, country):
+    provinces = get_province_count(cursor, country)
+    base_cap = provinces * RESOURCE_CAP_PER_PROVINCE
+    bonus_cap = int(get_additive_modifier(cursor, country, "resource_cap_bonus"))
+    return base_cap + bonus_cap
 
 def get_building_economy(cursor, country):
     cursor.execute("""
@@ -514,54 +546,34 @@ def economy_tick():
         political_mods['population_change'] += pop_growth
         production = get_resource_production(cursor, country)
         
-        building_livestock = get_building_country_modifier(cursor, country, "prod_livestock")
-        building_grain = get_building_country_modifier(cursor, country, "prod_grain")
-        building_slaves = get_building_country_modifier(cursor, country, "prod_slaves")
-        building_base_metals = get_building_country_modifier(cursor, country, "prod_base_metals")
-        building_iron = get_building_country_modifier(cursor, country, "prod_iron")
-        building_stone = get_building_country_modifier(cursor, country, "prod_stone")
-        building_wood = get_building_country_modifier(cursor, country, "prod_wood")
-        building_cloth = get_building_country_modifier(cursor, country, "prod_cloth")
-        building_wine = get_building_country_modifier(cursor, country, "prod_wine")
-        building_honey = get_building_country_modifier(cursor, country, "prod_honey")
-        building_olives = get_building_country_modifier(cursor, country, "prod_olives")
+        additive_resource_effects = {
+            "livestock": get_building_effect_total(cursor, country, "prod_livestock"),
+            "grain": get_building_effect_total(cursor, country, "prod_grain"),
+            "slaves": get_building_effect_total(cursor, country, "prod_slaves"),
+            "base_metals": get_building_effect_total(cursor, country, "prod_base_metals"),
+            "iron": get_building_effect_total(cursor, country, "prod_iron"),
+            "stone": get_building_effect_total(cursor, country, "prod_stone"),
+            "wood": get_building_effect_total(cursor, country, "prod_wood"),
+            "cloth": get_building_effect_total(cursor, country, "prod_cloth"),
+            "wine": get_building_effect_total(cursor, country, "prod_wine"),
+            "honey": get_building_effect_total(cursor, country, "prod_honey"),
+            "olives": get_building_effect_total(cursor, country, "prod_olives"),
+        }
+        additive_resource_ids = {
+            name: resource_ids[0]
+            for name, resource_ids in (
+                (resource_name, get_resource_ids_by_name(cursor, [resource_name]))
+                for resource_name in additive_resource_effects
+            )
+            if resource_ids
+        }
 
-        livestock_id = get_resource_ids_by_name(cursor, ["livestock"])[0] if get_resource_ids_by_name(cursor, ["livestock"]) else None
-        grain_id = get_resource_ids_by_name(cursor, ["grain"])[0] if get_resource_ids_by_name(cursor, ["grain"]) else None
-        slaves_id = get_resource_ids_by_name(cursor, ["slaves"])[0] if get_resource_ids_by_name(cursor, ["slaves"]) else None
-        base_metals_id = get_resource_ids_by_name(cursor, ["base_metals"])[0] if get_resource_ids_by_name(cursor, ["base_metals"]) else None
-        iron_id = get_resource_ids_by_name(cursor, ["iron"])[0] if get_resource_ids_by_name(cursor, ["iron"]) else None
-        stone_id = get_resource_ids_by_name(cursor, ["stone"])[0] if get_resource_ids_by_name(cursor, ["stone"]) else None
-        wood_id = get_resource_ids_by_name(cursor, ["wood"])[0] if get_resource_ids_by_name(cursor, ["wood"]) else None
-        cloth_id = get_resource_ids_by_name(cursor, ["cloth"])[0] if get_resource_ids_by_name(cursor, ["cloth"]) else None
-        wine_id = get_resource_ids_by_name(cursor, ["wine"])[0] if get_resource_ids_by_name(cursor, ["wine"]) else None
-        honey_id = get_resource_ids_by_name(cursor, ["honey"])[0] if get_resource_ids_by_name(cursor, ["honey"]) else None
-        olives_id = get_resource_ids_by_name(cursor, ["olives"])[0] if get_resource_ids_by_name(cursor, ["olives"]) else None
+        for resource_name, bonus_amount in additive_resource_effects.items():
+            resource_id = additive_resource_ids.get(resource_name)
+            if resource_id and bonus_amount > 0:
+                production[resource_id] = production.get(resource_id, 0) + int(bonus_amount)
         
-        if livestock_id and building_livestock > 0:
-            production[livestock_id] = production.get(livestock_id, 0) + building_livestock
-        if grain_id and building_grain > 0:
-            production[grain_id] = production.get(grain_id, 0) + building_grain
-        if slaves_id and building_slaves > 0:
-            production[slaves_id] = production.get(slaves_id, 0) + building_slaves
-        if base_metals_id and building_base_metals > 0:
-            production[base_metals_id] = production.get(base_metals_id, 0) + building_base_metals
-        if iron_id and building_iron > 0:
-            production[iron_id] = production.get(iron_id, 0) + building_iron
-        if stone_id and building_stone > 0:
-            production[stone_id] = production.get(stone_id, 0) + building_stone
-        if wood_id and building_wood > 0:
-            production[wood_id] = production.get(wood_id, 0) + building_wood
-        if cloth_id and building_cloth > 0:
-            production[cloth_id] = production.get(cloth_id, 0) + building_cloth
-        if wine_id and building_wine > 0:
-            production[wine_id] = production.get(wine_id, 0) + building_wine
-        if honey_id and building_honey > 0:
-            production[honey_id] = production.get(honey_id, 0) + building_honey
-        if olives_id and building_olives > 0:
-            production[olives_id] = production.get(olives_id, 0) + building_olives
-        
-        resource_cap = provinces * RESOURCE_CAP_PER_PROVINCE
+        resource_cap = get_resource_cap(cursor, country)
         actually_added = apply_resource_production(cursor, country, production, resource_cap)
         food_result = consume_food_resources(cursor, country, population, food_resource_ids)
         food_shortage_ratio = food_result["shortage_ratio"]
@@ -615,8 +627,14 @@ def economy_tick():
         growth_corruption = -political_mods['corruption'] * float(config["politics"]["economic_growth_corruption_factor"])
         growth_war = float(config["politics"]["growth_war_factor"]) if political_mods['at_war'] else 0
         growth_buildings = building_income_raw * float(config["politics"]["growth_building_factor"])
+        growth_modifier_bonus = get_additive_modifier(cursor, country, "economic_growth")
+        political_mods['stability_change'] += get_additive_modifier(cursor, country, "stability_growth")
+        political_mods['unrest_change'] -= get_additive_modifier(cursor, country, "unrest_reduction")
         
-        total_growth_rate = base_growth + growth_stability + growth_unrest + growth_corruption + growth_war + growth_buildings
+        total_growth_rate = (
+            base_growth + growth_stability + growth_unrest + growth_corruption +
+            growth_war + growth_buildings + growth_modifier_bonus
+        )
         total_growth_rate = max(0.0, total_growth_rate)
         
         productive_income_base = max(0, tax_income_after_corruption + building_income)
@@ -697,9 +715,7 @@ def economy_tick():
         
         
         total_land_units = get_total_land_units(cursor, country)
-        unit_limit_mod = get_country_modifier(cursor, country, "military_unit_limit_mult")
-        unit_limit_mod *= get_building_country_modifier(cursor, country, "military_unit_limit_mult")
-        land_unit_limit = int((population * BASE_UNIT_RATIO * unit_limit_mod) / POP_PER_UNIT + 5)
+        land_unit_limit = get_land_unit_cap(cursor, country)
         navy_info = validate_navy_cap(cursor, country)
         
         print(
@@ -722,7 +738,7 @@ def economy_tick():
         if production:
             for resource_id, amount in sorted(production.items()):
                 resource_name = resource_names.get(resource_id, f"ID_{resource_id}")
-                print(f"   +{actually_added.get(resource_name, 0):,}/{amount:,} {resource_name}")
+                print(f"   +{actually_added.get(resource_id, 0):,}/{amount:,} {resource_name}")
         print(f"\nPolitical State:")
         print(f"  Stability: {old_stability:.1f} → {new_stability:.1f} (change: {political_mods['stability_change']:.2f})")
         print(f"  Unrest: {old_unrest:.1f} → {new_unrest:.1f} (change: {political_mods['unrest_change']:.2f})")
