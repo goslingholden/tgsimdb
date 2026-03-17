@@ -10,7 +10,7 @@ import sys
 import os
 from datetime import datetime
 from db_utils import get_connection
-from economy_tick import get_land_unit_cap, get_navy_unit_cap
+from economy_tick import get_land_unit_cap, get_navy_unit_cap, get_resource_cap
 
 
 GOVERNMENT_TRANSLATIONS = {
@@ -171,6 +171,7 @@ def get_country_info(conn, country_code):
             'name': res[0],
             'stockpile': res[1]
         })
+    country_data['resource_total'] = sum(res['stockpile'] for res in country_data['resources'])
     
     # Ottieni modificatori
     cursor.execute("""
@@ -192,7 +193,7 @@ def get_country_info(conn, country_code):
     
     # Ottieni province
     cursor.execute("""
-        SELECT name, population, rank, religion, culture, terrain, is_naval
+        SELECT id, name, population, rank, religion, culture, terrain, is_naval
         FROM provinces
         WHERE owner_country_code = ?
         ORDER BY name
@@ -202,16 +203,30 @@ def get_country_info(conn, country_code):
     country_data['provinces'] = []
     for prov in provinces:
         country_data['provinces'].append({
-            'name': prov[0],
-            'population': prov[1],
-            'rank': prov[2],
-            'religion': prov[3],
-            'culture': prov[4],
-            'terrain': prov[5],
-            'is_naval': bool(prov[6])
+            'id': prov[0],
+            'name': prov[1],
+            'population': prov[2],
+            'rank': prov[3],
+            'religion': prov[4],
+            'culture': prov[5],
+            'terrain': prov[6],
+            'is_naval': bool(prov[7])
         })
+    for province in country_data['provinces']:
+        cursor.execute("""
+            SELECT bt.name, pb.amount
+            FROM province_buildings pb
+            JOIN building_types bt ON pb.building_type_id = bt.id
+            WHERE pb.province_id = ?
+            ORDER BY bt.name
+        """, (province['id'],))
+        province['buildings'] = [
+            {"name": building_name, "amount": amount}
+            for building_name, amount in cursor.fetchall()
+        ]
     country_data['land_unit_cap'] = get_land_unit_cap(cursor, country_code)
     country_data['navy_unit_cap'] = get_navy_unit_cap(cursor, country_code)
+    country_data['resource_cap'] = get_resource_cap(cursor, country_code)
 
     return country_data
 
@@ -308,6 +323,11 @@ def generate_report(country_data):
     if country_data['resources']:
         lines.append("RISORSE")
         lines.append("-" * 40)
+        lines.append(
+            f"Scorte Totali / Capacità: {format_number(country_data['resource_total'])} / "
+            f"{format_number(country_data['resource_cap'])}"
+        )
+        lines.append("")
         for res in country_data['resources']:
             lines.append(f"  {translate_value(res['name'], RESOURCE_TRANSLATIONS)}: {format_number(res['stockpile'])}")
         lines.append("")
@@ -330,11 +350,16 @@ def generate_report(country_data):
         lines.append(f"Province Totali: {len(country_data['provinces'])} | Popolazione Totale: {format_number(total_pop)}")
         lines.append("")
         for i, prov in enumerate(country_data['provinces'], 1):
-            naval_str = " (Navale)" if prov['is_naval'] else ""
-            lines.append(f"{i}. {prov['name']}{naval_str}")
+            lines.append(f"{i}. {prov['name']}")
             lines.append(f"   Popolazione: {format_number(prov['population'])} | Grado: {translate_value(prov['rank'], RANK_TRANSLATIONS)}")
             lines.append(f"   Cultura: {prov['culture']} | Religione: {prov['religion']}")
             lines.append(f"   Terreno: {translate_value(prov['terrain'], TERRAIN_TRANSLATIONS)}")
+            if prov['buildings']:
+                building_list = ", ".join(
+                    f"{building['amount']}x {building['name']}"
+                    for building in prov['buildings']
+                )
+                lines.append(f"   Edifici: {building_list}")
             lines.append("")
     
     lines.append("=" * 60)
