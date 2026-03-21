@@ -8,14 +8,22 @@ Esempio: python export_it.py ROM
 
 import sys
 import os
+import math
 from datetime import datetime
 from db_utils import get_connection
-from economy_tick import get_land_unit_cap, get_navy_unit_cap, get_resource_cap
+from economy_tick import (
+    FOOD_PER_1000_POP,
+    FOOD_RESOURCE_NAMES,
+    get_land_unit_cap,
+    get_navy_unit_cap,
+    get_resource_cap,
+)
 
 
 GOVERNMENT_TRANSLATIONS = {
     "monarchy": "Monarchia",
     "republic": "Repubblica",
+    "satrapy": "Satrapia",
     "tribe": "Tribù",
 }
 
@@ -96,6 +104,26 @@ def translate_value(value, translations):
 def format_number(num):
     """Formatta i numeri con le virgole per leggibilità."""
     return f"{num:,}" if isinstance(num, (int, float)) else str(num)
+
+
+def get_food_summary(country_data):
+    """Calcola scorte alimentari e fabbisogno per l'esportazione."""
+    total_population = sum(province['population'] for province in country_data['provinces'])
+    raw_required_food = (total_population / 1000) * FOOD_PER_1000_POP
+    required_food = max(0, int(math.floor(raw_required_food + 0.5)))
+
+    food_resources = [
+        resource for resource in country_data['resources']
+        if resource['name'] in FOOD_RESOURCE_NAMES
+    ]
+    available_food = sum(resource['stockpile'] for resource in food_resources)
+
+    return {
+        'required': required_food,
+        'available': available_food,
+        'balance': available_food - required_food,
+        'resources': food_resources,
+    }
 
 def get_country_info(conn, country_code):
     """Recupera tutte le informazioni su un paese dal database."""
@@ -184,8 +212,10 @@ def get_country_info(conn, country_code):
     
     modifiers = cursor.fetchall()
     country_data['modifiers'] = []
+    country_data['military_modifiers'] = []
     for mod in modifiers:
-        country_data['modifiers'].append({
+        target_list = country_data['military_modifiers'] if mod[2] == "military_stat" else country_data['modifiers']
+        target_list.append({
             'key': mod[0],
             'value': mod[1],
             'description': mod[2]
@@ -227,6 +257,7 @@ def get_country_info(conn, country_code):
     country_data['land_unit_cap'] = get_land_unit_cap(cursor, country_code)
     country_data['navy_unit_cap'] = get_navy_unit_cap(cursor, country_code)
     country_data['resource_cap'] = get_resource_cap(cursor, country_code)
+    country_data['food'] = get_food_summary(country_data)
 
     return country_data
 
@@ -292,6 +323,7 @@ def generate_report(country_data):
         lines.append("ECONOMIA")
         lines.append("-" * 40)
         lines.append(f"Cassa:                  {format_number(econ.get('treasury', 0))}")
+        lines.append(f"Tassazione:       {econ.get('tax_rate', 0) * 100:.1f}%")
         lines.append(f"Popolazione Totale:     {format_number(econ.get('total_population', 0))}")
         lines.append("")
         lines.append("Entrate:")
@@ -318,6 +350,13 @@ def generate_report(country_data):
         lines.append("")
         append_unit_section(lines, "FORZE DI TERRA", land_units, "Limite unità terrestri", country_data['land_unit_cap'])
         append_unit_section(lines, "FORZE NAVALI", naval_units, "Limite unità navali", country_data['navy_unit_cap'])
+        if country_data['military_modifiers']:
+            lines.append("MODIFICATORI MILITARI")
+            lines.append("-" * 40)
+            for mod in country_data['military_modifiers']:
+                value_str = f"{mod['value']:+.2f}" if isinstance(mod['value'], (int, float)) else str(mod['value'])
+                lines.append(f"  {mod['key']}: {value_str}")
+            lines.append("")
     
     # Risorse
     if country_data['resources']:
@@ -330,6 +369,25 @@ def generate_report(country_data):
         lines.append("")
         for res in country_data['resources']:
             lines.append(f"  {translate_value(res['name'], RESOURCE_TRANSLATIONS)}: {format_number(res['stockpile'])}")
+        lines.append("")
+
+    # Cibo
+    if 'food' in country_data:
+        food = country_data['food']
+        lines.append("CIBO")
+        lines.append("-" * 40)
+        lines.append(f"Cibo Necessario Per Turno: {format_number(food['required'])}")
+        lines.append(f"Scorte Alimentari Disponibili: {format_number(food['available'])}")
+        lines.append(f"Bilancio Alimentare: {format_number(food['balance'])}")
+        lines.append("")
+        if food['resources']:
+            for resource in food['resources']:
+                lines.append(
+                    f"  {translate_value(resource['name'], RESOURCE_TRANSLATIONS)}: "
+                    f"{format_number(resource['stockpile'])}"
+                )
+        else:
+            lines.append("  Nessuna")
         lines.append("")
     
     # Modificatori
@@ -394,7 +452,7 @@ def main():
         # Genera nome file con formato data italiano (usando caratteri sicuri)
         now = datetime.now()
         date_str = now.strftime("%d-%m-%Y %H-%M")
-        filename = f"{country_code} {date_str}.txt"
+        filename = f"{country_code} {date_str} IT.txt"
         filepath = os.path.join(files_dir, filename)
         
         with open(filepath, 'w', encoding='utf-8') as f:

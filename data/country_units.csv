@@ -54,3 +54,15 @@ GET,Fanteria leggera,15
 CRP,Fanteria leggera,5
 CRP,Liburna,2
 TRG,Fanteria leggera,3
+EPI,Fanteria leggera,18
+EPI,Liburna,3
+EPI,Trireme,3
+MAC,Fanteria leggera,80
+MAC,Liburna,24
+MAC,Trireme,16
+SPA,Fanteria leggera,10
+SPA,Liburna,4
+SPA,Trireme,2
+CRE,Fanteria leggera,11
+CRE,Liburna,10
+CRE,Trireme,6

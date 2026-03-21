@@ -8,7 +8,7 @@ config.read("config.ini")
 BASE_TAX_PER_POP = float(config["economy"]["base_tax_per_pop"])
 ADMIN_COST_PER_PROVINCE = float(config["economy"]["admin_cost_per_province"])
 
-RESOURCE_PRODUCTION = int(config["resources"]["resource_production"])
+POPULATION_PER_RESOURCE_UNIT = int(config["resources"].get("population_per_resource_unit", 10000))
 RESOURCE_CAP_PER_PROVINCE = int(config["resources"]["resource_cap_per_province"])
 
 FOOD_PER_1000_POP = float(config["food"]["food_per_1000_pop"])
@@ -23,7 +23,7 @@ BASE_UNIT_RATIO = float(config["military"]["base_unit_ratio"])
 
 def validate_schema(cursor):
     required_tables = [
-        "countries", "provinces", "country_economy",
+        "cultures", "countries", "provinces", "country_economy",
         "building_types", "province_buildings", "building_effects",
         "country_modifiers", "unit_types", "country_units",
         "resources", "country_resources"
@@ -366,30 +366,103 @@ def get_building_economy(cursor, country):
     income, upkeep = cursor.fetchone()
     return income or 0, upkeep or 0
 
-def get_resource_production(cursor, country):
-    """Calculate resource production for a country.
-    
-    Returns a dictionary mapping produced resource_id to production amount.
-    Production is based on owned provinces and each province contributes
-    RESOURCE_PRODUCTION units of its own resource.
-    """
-    config = configparser.ConfigParser()
-    config.read("config.ini")
-    
-    production_per_resource = int(config["resources"]["resource_production"])
+def get_province_output_modifier(province_culture, province_culture_group, province_religion,
+                                 owner_culture, owner_culture_group, owner_religion):
+    same_culture = province_culture == owner_culture
+    same_religion = province_religion == owner_religion
+    same_culture_group = province_culture_group == owner_culture_group
 
+    if same_culture and same_religion:
+        return 1.0
+    if (not same_culture) and same_culture_group and same_religion:
+        return 0.75
+    if ((not same_culture and not same_culture_group and same_religion) or
+            (same_culture and not same_religion)):
+        return 0.5
+    return 0.25
+
+
+def get_country_owned_provinces(cursor, country):
     cursor.execute("""
-        SELECT p.resource_id, COUNT(*) AS province_count
+        SELECT
+            p.id,
+            p.population,
+            p.resource_id,
+            p.culture,
+            COALESCE(pc.culture_group, p.culture),
+            p.religion,
+            c.culture,
+            c.culture_group,
+            c.religion
         FROM provinces p
+        JOIN countries c ON p.owner_country_code = c.code
+        LEFT JOIN cultures pc ON p.culture = pc.culture
         WHERE p.owner_country_code = ?
-          AND p.resource_id IS NOT NULL
-        GROUP BY p.resource_id
     """, (country,))
+    return cursor.fetchall()
 
-    return {
-        resource_id: province_count * production_per_resource
-        for resource_id, province_count in cursor.fetchall()
-    }
+
+def get_country_tax_base(cursor, country):
+    total_tax_base = 0.0
+    for (
+        _province_id,
+        population,
+        _resource_id,
+        province_culture,
+        province_culture_group,
+        province_religion,
+        owner_culture,
+        owner_culture_group,
+        owner_religion,
+    ) in get_country_owned_provinces(cursor, country):
+        modifier = get_province_output_modifier(
+            province_culture,
+            province_culture_group,
+            province_religion,
+            owner_culture,
+            owner_culture_group,
+            owner_religion,
+        )
+        total_tax_base += population * BASE_TAX_PER_POP * modifier
+    return total_tax_base
+
+
+def get_resource_production(cursor, country):
+    """Calculate population-scaled resource production for a country."""
+    production = {}
+
+    for (
+        _province_id,
+        population,
+        resource_id,
+        province_culture,
+        province_culture_group,
+        province_religion,
+        owner_culture,
+        owner_culture_group,
+        owner_religion,
+    ) in get_country_owned_provinces(cursor, country):
+        if resource_id is None:
+            continue
+
+        modifier = get_province_output_modifier(
+            province_culture,
+            province_culture_group,
+            province_religion,
+            owner_culture,
+            owner_culture_group,
+            owner_religion,
+        )
+
+        if population < POPULATION_PER_RESOURCE_UNIT:
+            produced_amount = 1
+        else:
+            base_units = population / POPULATION_PER_RESOURCE_UNIT
+            produced_amount = max(1, math.ceil(base_units * modifier))
+
+        production[resource_id] = production.get(resource_id, 0) + produced_amount
+
+    return production
 
 def ensure_country_resource_rows(cursor):
     """Ensure country_resources has one row per country/resource pair."""
@@ -598,7 +671,7 @@ def economy_tick():
         upkeep_mod *= political_mods['military_upkeep_mod']
         
         
-        base_tax = population * float(config["economy"]["base_tax_per_pop"])
+        base_tax = get_country_tax_base(cursor, country)
         tax_income = base_tax * tax_rate * tax_eff
         
         

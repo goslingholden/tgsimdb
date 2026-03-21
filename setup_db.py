@@ -25,6 +25,16 @@ CREATE TABLE IF NOT EXISTS countries (
 print("Nation-building completed.")
 
 
+print("Creating cultures table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS cultures (
+    culture TEXT PRIMARY KEY,
+    culture_group TEXT NOT NULL
+);
+""")
+print("Cultures table created successfully.")
+
+
 print("Creating resources table...")
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS resources (

@@ -4,6 +4,8 @@ from db_utils import get_connection
 from economy_tick import (
     get_country_modifier,
     get_building_country_modifier,
+    get_building_effect_total,
+    get_country_tax_base,
     get_population,
     get_province_count,
     get_military_upkeep,
@@ -16,6 +18,7 @@ from economy_tick import (
     get_total_land_units,
     get_coastal_province_count,
     get_resource_cap,
+    get_resource_ids_by_name,
     get_land_unit_cap,
     get_navy_unit_cap,
 )
@@ -27,10 +30,20 @@ config.read("config.ini")
 BASE_TAX_PER_POP = float(config["economy"]["base_tax_per_pop"])
 ADMIN_COST_PER_PROVINCE = float(config["economy"]["admin_cost_per_province"])
 
-RESOURCE_CAP_PER_PROVINCE = int(config["resources"]["resource_cap_per_province"])
 
-POP_PER_UNIT = int(config["military"]["pop_per_unit"])
-BASE_UNIT_RATIO = float(config["military"]["base_unit_ratio"])
+def import_cultures(cursor):
+    with open("data/cultures.csv", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            cursor.execute("""
+                INSERT INTO cultures (culture, culture_group)
+                VALUES (?, ?)
+                ON CONFLICT(culture) DO UPDATE SET
+                    culture_group = excluded.culture_group
+            """, (
+                row["culture"],
+                row["culture_group"],
+            ))
 
 
 def import_countries(cursor):
@@ -362,7 +375,7 @@ def import_unit_resource_costs(cursor):
 
 def validate_schema(cursor):
     required_tables = [
-        "countries", "provinces", "country_economy",
+        "cultures", "countries", "provinces", "country_economy",
         "building_types", "province_buildings", "building_effects",
         "country_modifiers", "unit_types", "country_units",
         "resources", "country_resources",
@@ -380,6 +393,7 @@ def validate_schema(cursor):
 def import_economy_snapshot(cursor):
     validate_schema(cursor)
     ensure_country_resource_rows(cursor)
+    cursor.execute("UPDATE country_resources SET stockpile = 0")
 
     cursor.execute("SELECT code FROM countries")
     countries = [c[0] for c in cursor.fetchall()]
@@ -413,7 +427,7 @@ def import_economy_snapshot(cursor):
         building_income_mult = get_country_modifier(cursor, country, "production_efficiency") * \
                                get_building_country_modifier(cursor, country, "production_efficiency")
 
-        base_tax = population * BASE_TAX_PER_POP
+        base_tax = get_country_tax_base(cursor, country)
         tax_income = base_tax * tax_rate * tax_eff
 
         administration_cost = provinces * ADMIN_COST_PER_PROVINCE * admin_mod
@@ -425,6 +439,38 @@ def import_economy_snapshot(cursor):
         building_income = building_income_raw * building_income_mult
 
         production = get_resource_production(cursor, country)
+        additive_resource_effects = {
+            "livestock": get_building_effect_total(cursor, country, "prod_livestock"),
+            "grain": get_building_effect_total(cursor, country, "prod_grain"),
+            "slaves": get_building_effect_total(cursor, country, "prod_slaves"),
+            "base_metals": get_building_effect_total(cursor, country, "prod_base_metals"),
+            "iron": get_building_effect_total(cursor, country, "prod_iron"),
+            "stone": get_building_effect_total(cursor, country, "prod_stone"),
+            "wood": get_building_effect_total(cursor, country, "prod_wood"),
+            "cloth": get_building_effect_total(cursor, country, "prod_cloth"),
+            "wine": get_building_effect_total(cursor, country, "prod_wine"),
+            "honey": get_building_effect_total(cursor, country, "prod_honey"),
+            "olives": get_building_effect_total(cursor, country, "prod_olives"),
+        }
+        additive_resource_ids = {
+            name: resource_ids[0]
+            for name, resource_ids in (
+                (resource_name, get_resource_ids_by_name(cursor, [resource_name]))
+                for resource_name in additive_resource_effects
+            )
+            if resource_ids
+        }
+        for resource_name, bonus_amount in additive_resource_effects.items():
+            resource_id = additive_resource_ids.get(resource_name)
+            if resource_id and bonus_amount > 0:
+                production[resource_id] = production.get(resource_id, 0) + int(bonus_amount)
+
+        for resource_id, amount in production.items():
+            cursor.execute("""
+                UPDATE country_resources
+                SET stockpile = ?
+                WHERE country_code = ? AND resource_id = ?
+            """, (int(amount), country, resource_id))
         resource_cap = get_resource_cap(cursor, country)
         stockpile_total = cursor.execute(
             "SELECT COALESCE(SUM(stockpile), 0) FROM country_resources WHERE country_code = ?",
@@ -515,8 +561,9 @@ def main():
     cursor = conn.cursor()
 
     try:
-        import_countries(cursor)
         import_resources(cursor)
+        import_cultures(cursor)
+        import_countries(cursor)
         import_provinces(cursor)
         import_building_types(cursor)
         import_building_resource_costs(cursor)

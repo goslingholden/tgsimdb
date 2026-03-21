@@ -3,8 +3,8 @@ grain,Food,1
 wood,Construction,1
 stone,Construction,2
 base_metals,Military,3
-precious_metals,Economy,5
-iron,Military,4
+precious_metals,Economy,10
+iron,Military,5
 wine,Food,2
 glass,Construction,2
 horses,Military,2
@@ -15,7 +15,7 @@ olives,Food,2
 salt,Economy,3
 honey,Food,4
 leather,Economy,1
-marble,Economy,5
+marble,Economy,6
 dyes,Economy,5
 slaves,Economy,5
-elephants,Military,5
+elephants,Military,8
