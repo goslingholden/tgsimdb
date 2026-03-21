@@ -1,6 +1,8 @@
 import csv
 import configparser
 import math
+import os
+import sys
 from db_utils import get_connection
 from economy_tick import (
     FOOD_PER_1000_POP,
@@ -35,10 +37,29 @@ config.read("config.ini")
 
 BASE_TAX_PER_POP = float(config["economy"]["base_tax_per_pop"])
 ADMIN_COST_PER_PROVINCE = float(config["economy"]["admin_cost_per_province"])
+DATA_ROOT = "data"
 
 
-def import_cultures(cursor):
-    with open("data/cultures.csv", newline="", encoding="utf-8") as f:
+def resolve_data_dir(scenario_name=None):
+    if scenario_name:
+        data_dir = os.path.join(DATA_ROOT, scenario_name)
+    else:
+        data_dir = DATA_ROOT
+
+    if not os.path.isdir(data_dir):
+        raise FileNotFoundError(f"Data directory not found: {data_dir}")
+    return data_dir
+
+
+def data_file(data_dir, filename):
+    path = os.path.join(data_dir, filename)
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Required data file not found: {path}")
+    return path
+
+
+def import_cultures(cursor, data_dir):
+    with open(data_file(data_dir, "cultures.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
@@ -52,8 +73,8 @@ def import_cultures(cursor):
             ))
 
 
-def import_countries(cursor):
-    with open("data/countries.csv", newline="", encoding="utf-8") as f:
+def import_countries(cursor, data_dir):
+    with open(data_file(data_dir, "countries.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
@@ -89,8 +110,8 @@ def import_countries(cursor):
             ))
 
 
-def import_provinces(cursor):
-    with open("data/provinces.csv", newline="", encoding="utf-8") as f:
+def import_provinces(cursor, data_dir):
+    with open(data_file(data_dir, "provinces.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
 
@@ -130,8 +151,8 @@ def import_provinces(cursor):
             ))
 
 
-def import_building_types(cursor):
-    with open("data/building_types.csv", newline="", encoding="utf-8") as f:
+def import_building_types(cursor, data_dir):
+    with open(data_file(data_dir, "building_types.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
@@ -156,8 +177,8 @@ def import_building_types(cursor):
             ))
 
 
-def import_province_buildings(cursor):
-    with open("data/province_buildings.csv", newline="", encoding="utf-8") as f:
+def import_province_buildings(cursor, data_dir):
+    with open(data_file(data_dir, "province_buildings.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             province = row["province_name"]
@@ -179,8 +200,8 @@ def import_province_buildings(cursor):
             """, (province_id[0], building_id[0], amount))
 
 
-def import_country_economy(cursor):
-    with open("data/country_economy.csv", newline="", encoding="utf-8") as f:
+def import_country_economy(cursor, data_dir):
+    with open(data_file(data_dir, "country_economy.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
@@ -198,8 +219,8 @@ def import_country_economy(cursor):
                 ))
 
 
-def import_unit_types(cursor):
-    with open("data/unit_types.csv", newline="", encoding="utf-8") as f:
+def import_unit_types(cursor, data_dir):
+    with open(data_file(data_dir, "unit_types.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
@@ -223,8 +244,8 @@ def import_unit_types(cursor):
             ))
 
 
-def import_country_units(cursor):
-    with open("data/country_units.csv", newline="", encoding="utf-8") as f:
+def import_country_units(cursor, data_dir):
+    with open(data_file(data_dir, "country_units.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             country = row["country_code"]
@@ -243,8 +264,8 @@ def import_country_units(cursor):
             """, (country, unit_id[0], amount))
 
 
-def import_modifiers(cursor):
-    with open("data/modifiers.csv", newline="", encoding="utf-8") as f:
+def import_modifiers(cursor, data_dir):
+    with open(data_file(data_dir, "modifiers.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
@@ -262,8 +283,8 @@ def import_modifiers(cursor):
             ))
 
 
-def import_building_effects(cursor):
-    with open("data/building_effects.csv", newline="", encoding="utf-8") as f:
+def import_building_effects(cursor, data_dir):
+    with open(data_file(data_dir, "building_effects.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             building_name = row.get("building_name", "").strip()
@@ -289,8 +310,8 @@ def import_building_effects(cursor):
             """, (building_type_id, scope, modifier_key, value))
 
 
-def import_country_modifiers(cursor):
-    with open("data/country_modifiers.csv", newline="", encoding="utf-8") as f:
+def import_country_modifiers(cursor, data_dir):
+    with open(data_file(data_dir, "country_modifiers.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
@@ -307,8 +328,8 @@ def import_country_modifiers(cursor):
                 ))
 
 
-def import_resources(cursor):
-    with open("data/resources.csv", newline="", encoding="utf-8") as f:
+def import_resources(cursor, data_dir):
+    with open(data_file(data_dir, "resources.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
@@ -322,8 +343,8 @@ def import_resources(cursor):
             ))
 
 
-def import_building_resource_costs(cursor):
-    with open("data/building_resource_cost.csv", newline="", encoding="utf-8") as f:
+def import_building_resource_costs(cursor, data_dir):
+    with open(data_file(data_dir, "building_resource_cost.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             building_name = row.get("building_name", "").strip()
@@ -351,8 +372,8 @@ def import_building_resource_costs(cursor):
 
 
 
-def import_unit_resource_costs(cursor):
-    with open("data/unit_resource_costs.csv", newline="", encoding="utf-8") as f:
+def import_unit_resource_costs(cursor, data_dir):
+    with open(data_file(data_dir, "unit_resource_costs.csv"), newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             unit_name = row.get("unit_name", "").strip()
@@ -645,29 +666,31 @@ def import_economy_snapshot(cursor):
 
 
 def main():
+    scenario_name = sys.argv[1] if len(sys.argv) > 1 else None
+    data_dir = resolve_data_dir(scenario_name)
     conn = get_connection()
     conn.execute("PRAGMA foreign_keys = ON;")
     cursor = conn.cursor()
 
     try:
-        import_resources(cursor)
-        import_cultures(cursor)
-        import_countries(cursor)
-        import_provinces(cursor)
-        import_building_types(cursor)
-        import_building_resource_costs(cursor)
-        import_province_buildings(cursor)
-        import_country_economy(cursor)
-        import_unit_types(cursor)
-        import_unit_resource_costs(cursor)
-        import_country_units(cursor)
-        import_modifiers(cursor)
-        import_building_effects(cursor)
-        import_country_modifiers(cursor)
+        import_resources(cursor, data_dir)
+        import_cultures(cursor, data_dir)
+        import_countries(cursor, data_dir)
+        import_provinces(cursor, data_dir)
+        import_building_types(cursor, data_dir)
+        import_building_resource_costs(cursor, data_dir)
+        import_province_buildings(cursor, data_dir)
+        import_country_economy(cursor, data_dir)
+        import_unit_types(cursor, data_dir)
+        import_unit_resource_costs(cursor, data_dir)
+        import_country_units(cursor, data_dir)
+        import_modifiers(cursor, data_dir)
+        import_building_effects(cursor, data_dir)
+        import_country_modifiers(cursor, data_dir)
         import_economy_snapshot(cursor)
 
         conn.commit()
-        print("🌍 World data and economy snapshot imported successfully.")
+        print(f"🌍 World data and economy snapshot imported successfully from {data_dir}.")
 
     except Exception as e:
         conn.rollback()

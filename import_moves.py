@@ -16,17 +16,46 @@ def clean(value):
     return value if value != "" else None
 
 
+def resolve_moves_dir(folder_name=None):
+    if folder_name:
+        moves_dir = os.path.join(MOVES_FOLDER, folder_name)
+    else:
+        moves_dir = MOVES_FOLDER
+
+    if not os.path.isdir(moves_dir):
+        raise FileNotFoundError(f"Moves directory not found: {moves_dir}")
+    return moves_dir
 
 
-def import_player_moves(turn_number):
-
-    turn_number = int(turn_number)
-
-    filename = os.path.join(MOVES_FOLDER, f"player_moves_turn_{turn_number}.csv")
-
+def get_moves_file(moves_dir, turn_number):
+    filename = os.path.join(moves_dir, f"player_moves_turn_{turn_number}.csv")
     if not os.path.exists(filename):
-        print(f"❌ No moves file found: {filename}")
-        return
+        raise FileNotFoundError(f"No moves file found: {filename}")
+    return filename
+
+
+def parse_args(argv):
+    if len(argv) < 2:
+        print("Usage: py import_moves.py TURN_NUMBER [MOVES_SUBFOLDER]")
+        print('Example: py import_moves.py 1 "Diadochi 322 AC Partita 1"')
+        sys.exit(1)
+
+    try:
+        turn_number = int(argv[1])
+    except ValueError:
+        print(f"❌ Invalid turn number: '{argv[1]}' — must be an integer.")
+        sys.exit(1)
+
+    moves_subfolder = argv[2] if len(argv) > 2 else None
+    return turn_number, moves_subfolder
+
+
+
+
+def import_player_moves(turn_number, moves_subfolder=None):
+    turn_number = int(turn_number)
+    moves_dir = resolve_moves_dir(moves_subfolder)
+    filename = get_moves_file(moves_dir, turn_number)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -98,7 +127,7 @@ def import_player_moves(turn_number):
                 move_count += 1
 
         conn.commit()
-        print(f"✅ Imported {move_count} moves for turn {turn_number}")
+        print(f"✅ Imported {move_count} moves for turn {turn_number} from {filename}")
 
     except Exception as e:
         conn.rollback()
@@ -112,13 +141,5 @@ def import_player_moves(turn_number):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: py import_moves.py TURN_NUMBER")
-        sys.exit(1)
-    try:
-        turn_number = int(sys.argv[1])
-    except ValueError:
-        print(f"❌ Invalid turn number: '{sys.argv[1]}' — must be an integer.")
-        sys.exit(1)
-
-    import_player_moves(turn_number)
+    turn_number, moves_subfolder = parse_args(sys.argv)
+    import_player_moves(turn_number, moves_subfolder)

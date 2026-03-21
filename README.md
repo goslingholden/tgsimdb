@@ -2,7 +2,7 @@
 
 `tgsimdb` is an acronym that stands for Telegram Simulation Database. Telegram Simulations (or "SIMs" for short) are text-based turn-based strategy RP games where you take control of an historical nation or state in a given time period, interacting and competing with other players for global domination. Like any other RP game each player starts with a "File" in which they can find all the relevant data that they need in order to play. As the game progresses and players make their moves, that data needs to be constantly updated and player files need to be rewritten each week. That work is usually done manually by the admins/masters of the RPs with the use of text files or excel spreadsheets. This project aims at creating a universal database made with the use of Python and SQLite to manage and automatically update, print and share player files.
 
-This project is in the earliest stages of development. Current version is v.1.3
+This project is in the earliest stages of development. Current version is v.1.3.1
 
 ## Table of Contents
 1. [Project Overview](#project-overview)
@@ -18,6 +18,25 @@ This project is in the earliest stages of development. Current version is v.1.3
 
 ## CSV Data Structure
 The project uses CSV files to define the initial game state. Each CSV file represents a different aspect of the game world:
+
+Scenario data can now be stored inside subfolders under `data/`, for example:
+
+```text
+data/
+  Diadochi 322 AC/
+    countries.csv
+    provinces.csv
+    resources.csv
+    ...
+```
+
+Player move files can also be stored inside subfolders under `moves/`, for example:
+
+```text
+moves/
+  Diadochi 322 AC Partita 1/
+    player_moves_turn_1.csv
+```
 
 ### Core Data Files
 - **countries.csv**: Defines all countries in the game
@@ -59,11 +78,13 @@ The import process is handled by several scripts that work together to populate 
 2. **import_data.py**: Imports core data from CSV files
    - Imports countries, provinces, resources, building types, and unit types
    - Establishes relationships between tables
+   - Can load from `data/<scenario_name>/` when a scenario subfolder is provided
 
 ### Country-Specific Data Import
 3. **import_moves.py**: Imports player moves
    - Imports economy data, military units, resources, and modifiers
    - Links data to specific countries
+   - Can load from `moves/<moves_subfolder>/` when a moves subfolder is provided
 
 ### Game Management
 4. **process_moves.py**: Processes player moves each turn
@@ -80,7 +101,9 @@ The import process is handled by several scripts that work together to populate 
 ### Data Management Scripts
 - **setup_db.py**: Initializes the database with all tables
 - **import_data.py**: Imports core game data from CSV files
+  - Usage: `python import_data.py [scenario_subfolder]`
 - **import_moves.py**: Imports country-specific data and initial moves
+  - Usage: `python import_moves.py <turn_number> [moves_subfolder]`
 - **process_moves.py**: Processes player moves and updates database
 - **economy_tick.py**: Updates economic data each turn
 
@@ -141,11 +164,18 @@ This makes it easier to audit manual/event-driven changes during a campaign.
 # Initialize the database
 python setup_db.py
 
-# Import core game data
-python import_data.py
+# Import a specific scenario from data/<scenario_subfolder>
+python import_data.py "Diadochi 322 AC"
 
-# Import country-specific data
-python import_moves.py
+# Import turn 1 moves from moves/<moves_subfolder>
+python import_moves.py 1 "Diadochi 322 AC Partita 1"
+```
+
+If you still keep files directly in the root `data/` or `moves/` folders, both scripts remain backward-compatible:
+
+```bash
+python import_data.py
+python import_moves.py 1
 ```
 
 ### Running a Game Turn
