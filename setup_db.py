@@ -262,6 +262,24 @@ CREATE TABLE IF NOT EXISTS player_moves (
 print("Player moves table created successfully.")
 
 
+print("Creating event log table...")
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS event_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    executed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    command_name TEXT NOT NULL,
+    target_table TEXT NOT NULL,
+    target_key TEXT NOT NULL,
+    field_name TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    delta_value REAL,
+    notes TEXT
+);
+""")
+print("Event log table created successfully.")
+
+
 cursor.execute("PRAGMA table_info(player_moves)")
 player_move_columns = {row[1] for row in cursor.fetchall()}
 

@@ -2,15 +2,16 @@
 
 `tgsimdb` is an acronym that stands for Telegram Simulation Database. Telegram Simulations (or "SIMs" for short) are text-based turn-based strategy RP games where you take control of an historical nation or state in a given time period, interacting and competing with other players for global domination. Like any other RP game each player starts with a "File" in which they can find all the relevant data that they need in order to play. As the game progresses and players make their moves, that data needs to be constantly updated and player files need to be rewritten each week. That work is usually done manually by the admins/masters of the RPs with the use of text files or excel spreadsheets. This project aims at creating a universal database made with the use of Python and SQLite to manage and automatically update, print and share player files.
 
-This project is in the earliest stages of development. Current version is v.1.2
+This project is in the earliest stages of development. Current version is v.1.3
 
 ## Table of Contents
 1. [Project Overview](#project-overview)
 2. [CSV Data Structure](#csv-data-structure)
 3. [Data Import Process](#data-import-process)
 4. [Available Scripts](#available-scripts)
-5. [Usage Examples](#usage-examples)
-6. [Future Roadmap](#future-roadmap)
+5. [Admin Commands](#admin-commands)
+6. [Usage Examples](#usage-examples)
+7. [Future Roadmap](#future-roadmap)
 
 ## Project Overview
 `tgsimdb` is designed to automate the management of Telegram Simulation games by providing a centralized database system. The project uses Python and SQLite to handle game data, allowing administrators to focus on gameplay rather than manual data management.
@@ -93,7 +94,45 @@ The import process is handled by several scripts that work together to populate 
 
 ### Utility Scripts
 - **balance_report.py**: Generates economic balance reports
+- **admin_tools.py**: Applies admin/event changes safely and logs them to `event_log`
 - **db_utils.py**: Database connection utilities
+
+## Admin Commands
+
+`admin_tools.py` is the recommended way to apply mid-game event changes instead of editing SQL rows manually. It validates the requested change, updates the relevant tables, logs the change in `event_log`, and refreshes derived `country_economy` values when needed.
+
+### Supported Commands
+- `python admin_tools.py set-basic <country_code> <field> <value>`
+  - Allowed fields: `capital`, `government`, `culture`, `culture_group`, `religion`
+- `python admin_tools.py set-political <country_code> <field> <value>`
+  - Allowed fields: `stability`, `unrest`, `corruption`, `war_exhaustion`, `at_war`
+- `python admin_tools.py add-treasury <country_code> <amount>`
+- `python admin_tools.py remove-treasury <country_code> <amount>`
+- `python admin_tools.py set-tax-rate <country_code> <tax_rate>`
+- `python admin_tools.py add-food <country_code> <resource_name> <amount>`
+- `python admin_tools.py remove-food <country_code> <resource_name> <amount>`
+- `python admin_tools.py transfer-province <province_id> <target_country_code>`
+- `python admin_tools.py change-population <province_id> <delta>`
+- `python admin_tools.py spawn-units <country_code> <unit_name_or_id> <amount>`
+- `python admin_tools.py add-building <province_id> <building_name_or_id> <amount>`
+- `python admin_tools.py set-modifier <country_code> <modifier_key> <value>`
+- `python admin_tools.py add-modifier <country_code> <modifier_key> <delta>`
+- `python admin_tools.py remove-modifier <country_code> <modifier_key>`
+- `python admin_tools.py refresh-country <country_code>`
+- `python admin_tools.py refresh-all`
+
+### Event Log
+
+Each admin command writes one or more rows to the `event_log` table. Logged values include:
+- command name
+- target table and target key
+- field changed
+- old value
+- new value
+- numeric delta when applicable
+- notes about why the refresh happened
+
+This makes it easier to audit manual/event-driven changes during a campaign.
 
 ## Usage Examples
 
@@ -118,26 +157,40 @@ python process_moves.py
 python economy_tick.py
 
 # Export player files
-python export.py ROM
+python export_en.py ROM
 python export_it.py ROM
 ```
 
 ### Exporting Player Information
 ```bash
 # Export in English
-python export.py ROM
+python export_en.py ROM
 
 # Export in Italian
 python export_it.py ROM
 ```
 
-## Future Roadmap
+### Applying Admin/Event Changes
+```bash
+# Add treasury after an event
+python admin_tools.py add-treasury ROM 200
 
-### Immediate Goals (v1.1.X)
-- [ ] Add support for multiple scenarios
-- [ ] Implement conflict resolution system
-- [ ] Add diplomatic relations tracking
-- [ ] Performance optimization for large games
+# Change a country's religion
+python admin_tools.py set-basic ROM religion Hellenic
+
+# Increase unrest after a rebellion
+python admin_tools.py set-political ROM unrest 12
+
+# Add emergency food reserves
+python admin_tools.py add-food ROM grain 10
+
+# Transfer a province after a war
+python admin_tools.py transfer-province 17 CAR
+
+# Recalculate derived economy values
+python admin_tools.py refresh-country ROM
+python admin_tools.py refresh-all
+```
 
 ## Contributing
 Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.

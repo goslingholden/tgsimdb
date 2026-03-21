@@ -1,7 +1,13 @@
 import csv
 import configparser
+import math
 from db_utils import get_connection
 from economy_tick import (
+    FOOD_PER_1000_POP,
+    FOOD_RESOURCE_NAMES,
+    FOOD_SHORTAGE_TAX_PENALTY_MAX,
+    calculate_political_modifiers,
+    get_additive_modifier,
     get_country_modifier,
     get_building_country_modifier,
     get_building_effect_total,
@@ -379,7 +385,8 @@ def validate_schema(cursor):
         "building_types", "province_buildings", "building_effects",
         "country_modifiers", "unit_types", "country_units",
         "resources", "country_resources",
-        "building_resource_costs", "unit_resource_costs"
+        "building_resource_costs", "unit_resource_costs",
+        "event_log"
     ]
 
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -390,168 +397,250 @@ def validate_schema(cursor):
         raise RuntimeError(f"Missing required tables: {missing}")
 
 
-def import_economy_snapshot(cursor):
-    validate_schema(cursor)
-    ensure_country_resource_rows(cursor)
-    cursor.execute("UPDATE country_resources SET stockpile = 0")
+def get_country_resource_production_snapshot(cursor, country):
+    production = get_resource_production(cursor, country)
+    additive_resource_effects = {
+        "livestock": get_building_effect_total(cursor, country, "prod_livestock"),
+        "grain": get_building_effect_total(cursor, country, "prod_grain"),
+        "slaves": get_building_effect_total(cursor, country, "prod_slaves"),
+        "base_metals": get_building_effect_total(cursor, country, "prod_base_metals"),
+        "iron": get_building_effect_total(cursor, country, "prod_iron"),
+        "stone": get_building_effect_total(cursor, country, "prod_stone"),
+        "wood": get_building_effect_total(cursor, country, "prod_wood"),
+        "cloth": get_building_effect_total(cursor, country, "prod_cloth"),
+        "wine": get_building_effect_total(cursor, country, "prod_wine"),
+        "honey": get_building_effect_total(cursor, country, "prod_honey"),
+        "olives": get_building_effect_total(cursor, country, "prod_olives"),
+    }
+    additive_resource_ids = {
+        name: resource_ids[0]
+        for name, resource_ids in (
+            (resource_name, get_resource_ids_by_name(cursor, [resource_name]))
+            for resource_name in additive_resource_effects
+        )
+        if resource_ids
+    }
 
-    cursor.execute("SELECT code FROM countries")
-    countries = [c[0] for c in cursor.fetchall()]
+    for resource_name, bonus_amount in additive_resource_effects.items():
+        resource_id = additive_resource_ids.get(resource_name)
+        if resource_id and bonus_amount > 0:
+            production[resource_id] = production.get(resource_id, 0) + int(bonus_amount)
 
-    print("\n=== IMPORT ECONOMY START ===")
+    return production
 
-    for country in countries:
-        cursor.execute("SELECT treasury, tax_rate FROM country_economy WHERE country_code = ?", (country,))
-        row = cursor.fetchone()
-        if not row:
+
+def get_food_tax_multiplier_preview(cursor, country, population):
+    raw_required_food = (population / 1000) * FOOD_PER_1000_POP
+    required_food = max(0, int(math.floor(raw_required_food + 0.5)))
+    if required_food == 0:
+        return 1.0
+
+    food_resource_ids = get_resource_ids_by_name(cursor, FOOD_RESOURCE_NAMES)
+    if not food_resource_ids:
+        return 1.0
+
+    placeholders = ",".join("?" for _ in food_resource_ids)
+    cursor.execute(
+        f"""
+        SELECT COALESCE(SUM(stockpile), 0)
+        FROM country_resources
+        WHERE country_code = ?
+          AND resource_id IN ({placeholders})
+        """,
+        (country, *food_resource_ids)
+    )
+    available_food = int(cursor.fetchone()[0] or 0)
+    shortage = max(0, required_food - available_food)
+    shortage_ratio = shortage / required_food if required_food > 0 else 0.0
+    return max(0.0, 1.0 - (shortage_ratio * FOOD_SHORTAGE_TAX_PENALTY_MAX))
+
+
+def refresh_country_economy(cursor, country, seed_resource_stockpiles=False, verbose=False):
+    cursor.execute("SELECT treasury, tax_rate FROM country_economy WHERE country_code = ?", (country,))
+    row = cursor.fetchone()
+    if not row:
+        if verbose:
             print(f"⚠ No economy row for {country}")
-            continue
+        return None
 
-        treasury, tax_rate = row
+    treasury, tax_rate = row
+    population = get_population(cursor, country)
+    provinces = get_province_count(cursor, country)
+    political_mods = calculate_political_modifiers(cursor, country)
+    if not political_mods:
+        return None
 
-        population = get_population(cursor, country)
-        provinces = get_province_count(cursor, country)
+    tax_eff = get_country_modifier(cursor, country, "tax_efficiency")
+    tax_eff *= get_building_country_modifier(cursor, country, "tax_efficiency")
+    tax_eff *= political_mods["tax_efficiency_mod"]
 
-        tax_eff = get_country_modifier(cursor, country, "tax_efficiency") * \
-                  get_building_country_modifier(cursor, country, "tax_efficiency")
+    admin_mod = get_country_modifier(cursor, country, "admin_cost_modifier")
+    admin_mod *= get_building_country_modifier(cursor, country, "admin_cost_modifier")
+    admin_eff = get_country_modifier(cursor, country, "admin_efficiency")
+    admin_eff *= get_building_country_modifier(cursor, country, "admin_efficiency")
+    admin_mod /= max(0.0001, admin_eff)
+    admin_mod *= political_mods["admin_cost_mod"]
 
-        admin_mod = get_country_modifier(cursor, country, "admin_cost_modifier") * \
-                    get_building_country_modifier(cursor, country, "admin_cost_modifier")
-        admin_eff = get_country_modifier(cursor, country, "admin_efficiency") * \
-                    get_building_country_modifier(cursor, country, "admin_efficiency")
-        admin_mod /= max(0.0001, admin_eff)
+    upkeep_mod = get_country_modifier(cursor, country, "military_upkeep_modifier")
+    upkeep_mod *= political_mods["military_upkeep_mod"]
 
-        upkeep_mod = get_country_modifier(cursor, country, "military_upkeep_modifier") * \
-                     get_building_country_modifier(cursor, country, "military_upkeep_modifier")
+    building_income_mult = get_country_modifier(cursor, country, "production_efficiency")
+    building_income_mult *= get_building_country_modifier(cursor, country, "production_efficiency")
 
-        building_income_mult = get_country_modifier(cursor, country, "production_efficiency") * \
-                               get_building_country_modifier(cursor, country, "production_efficiency")
+    base_tax = get_country_tax_base(cursor, country)
+    tax_income = base_tax * tax_rate * tax_eff
+    tax_income *= (1 - political_mods["corruption"] * 0.5)
+    tax_income *= get_food_tax_multiplier_preview(cursor, country, population)
 
-        base_tax = get_country_tax_base(cursor, country)
-        tax_income = base_tax * tax_rate * tax_eff
+    administration_cost = provinces * ADMIN_COST_PER_PROVINCE * admin_mod
+    military_upkeep = get_military_upkeep(cursor, country) * upkeep_mod
+    building_income_raw, building_upkeep = get_building_economy(cursor, country)
+    building_income = building_income_raw * building_income_mult
 
-        administration_cost = provinces * ADMIN_COST_PER_PROVINCE * admin_mod
+    base_growth = float(config["politics"]["base_economic_growth"])
+    growth_stability = (
+        (political_mods["stability"] - 50)
+        * float(config["politics"]["economic_growth_stability_factor"])
+    )
+    growth_unrest = -political_mods["unrest"] * float(config["politics"]["economic_growth_unrest_factor"])
+    growth_corruption = -political_mods["corruption"] * float(config["politics"]["economic_growth_corruption_factor"])
+    growth_war = float(config["politics"]["growth_war_factor"]) if political_mods["at_war"] else 0
+    growth_buildings = building_income_raw * float(config["politics"]["growth_building_factor"])
+    growth_modifier_bonus = get_additive_modifier(cursor, country, "economic_growth")
+    total_growth_rate = max(
+        0.0,
+        base_growth + growth_stability + growth_unrest + growth_corruption
+        + growth_war + growth_buildings + growth_modifier_bonus
+    )
+    productive_income_base = max(0, tax_income + building_income)
+    growth_amount = int(productive_income_base * total_growth_rate)
 
-        base_upkeep = get_military_upkeep(cursor, country)
-        military_upkeep = base_upkeep * upkeep_mod
+    total_income = int(tax_income + building_income + growth_amount)
+    total_expenses = int(administration_cost + military_upkeep + building_upkeep)
+    production = get_country_resource_production_snapshot(cursor, country)
 
-        building_income_raw, building_upkeep = get_building_economy(cursor, country)
-        building_income = building_income_raw * building_income_mult
-
-        production = get_resource_production(cursor, country)
-        additive_resource_effects = {
-            "livestock": get_building_effect_total(cursor, country, "prod_livestock"),
-            "grain": get_building_effect_total(cursor, country, "prod_grain"),
-            "slaves": get_building_effect_total(cursor, country, "prod_slaves"),
-            "base_metals": get_building_effect_total(cursor, country, "prod_base_metals"),
-            "iron": get_building_effect_total(cursor, country, "prod_iron"),
-            "stone": get_building_effect_total(cursor, country, "prod_stone"),
-            "wood": get_building_effect_total(cursor, country, "prod_wood"),
-            "cloth": get_building_effect_total(cursor, country, "prod_cloth"),
-            "wine": get_building_effect_total(cursor, country, "prod_wine"),
-            "honey": get_building_effect_total(cursor, country, "prod_honey"),
-            "olives": get_building_effect_total(cursor, country, "prod_olives"),
-        }
-        additive_resource_ids = {
-            name: resource_ids[0]
-            for name, resource_ids in (
-                (resource_name, get_resource_ids_by_name(cursor, [resource_name]))
-                for resource_name in additive_resource_effects
-            )
-            if resource_ids
-        }
-        for resource_name, bonus_amount in additive_resource_effects.items():
-            resource_id = additive_resource_ids.get(resource_name)
-            if resource_id and bonus_amount > 0:
-                production[resource_id] = production.get(resource_id, 0) + int(bonus_amount)
-
+    if seed_resource_stockpiles:
+        cursor.execute("UPDATE country_resources SET stockpile = 0 WHERE country_code = ?", (country,))
         for resource_id, amount in production.items():
             cursor.execute("""
                 UPDATE country_resources
                 SET stockpile = ?
                 WHERE country_code = ? AND resource_id = ?
             """, (int(amount), country, resource_id))
-        resource_cap = get_resource_cap(cursor, country)
-        stockpile_total = cursor.execute(
-            "SELECT COALESCE(SUM(stockpile), 0) FROM country_resources WHERE country_code = ?",
-            (country,)
-        ).fetchone()[0] or 0
 
-        total_income = int(tax_income + building_income)
-        total_expenses = int(administration_cost + military_upkeep + building_upkeep)
-        new_treasury = treasury + total_income - total_expenses
+    cursor.execute("""
+        UPDATE country_economy SET
+            tax_income = ?,
+            building_income = ?,
+            total_income = ?,
+            administration_cost = ?,
+            military_upkeep = ?,
+            building_upkeep = ?,
+            total_expenses = ?,
+            economic_growth = ?,
+            total_population = ?
+        WHERE country_code = ?
+    """, (
+        int(tax_income),
+        int(building_income),
+        total_income,
+        int(administration_cost),
+        int(military_upkeep),
+        int(building_upkeep),
+        total_expenses,
+        total_growth_rate,
+        population,
+        country
+    ))
 
-        cursor.execute("""
-            UPDATE country_economy SET
-                tax_income = ?,
-                building_income = ?,
-                total_income = ?,
-                administration_cost = ?,
-                military_upkeep = ?,
-                building_upkeep = ?,
-                total_expenses = ?,
-                total_population = ?
-            WHERE country_code = ?
-        """, (
-            int(tax_income),
-            int(building_income),
-            total_income,
-            int(administration_cost),
-            int(military_upkeep),
-            int(building_upkeep),
-            total_expenses,
-            population,
-            country
-        ))
+    resource_cap = get_resource_cap(cursor, country)
+    stockpile_total = cursor.execute(
+        "SELECT COALESCE(SUM(stockpile), 0) FROM country_resources WHERE country_code = ?",
+        (country,)
+    ).fetchone()[0] or 0
 
-        
-        land_military_upkeep = get_land_military_upkeep(cursor, country)
-        navy_upkeep_raw = get_navy_upkeep(cursor, country)
-        land_military_upkeep_final = land_military_upkeep * upkeep_mod
-        navy_upkeep_mod = get_country_modifier(cursor, country, "navy_upkeep_modifier")
-        navy_upkeep_mod *= 1.0  
-        navy_military_upkeep_final = navy_upkeep_raw * navy_upkeep_mod
-        
-        
-        total_navy_units = get_total_navy_units(cursor, country)
-        coastal_provinces = get_coastal_province_count(cursor, country)
-        navy_cap = get_navy_unit_cap(cursor, country)
-        land_unit_limit = get_land_unit_cap(cursor, country)
+    result = {
+        "country": country,
+        "treasury": treasury,
+        "tax_rate": tax_rate,
+        "population": population,
+        "provinces": provinces,
+        "tax_income": int(tax_income),
+        "building_income": int(building_income),
+        "total_income": total_income,
+        "administration_cost": int(administration_cost),
+        "military_upkeep": int(military_upkeep),
+        "building_upkeep": int(building_upkeep),
+        "total_expenses": total_expenses,
+        "economic_growth": total_growth_rate,
+        "resource_cap": resource_cap,
+        "stockpile_total": stockpile_total,
+        "production": production,
+        "land_unit_cap": get_land_unit_cap(cursor, country),
+        "navy_unit_cap": get_navy_unit_cap(cursor, country),
+        "total_land_units": get_total_land_units(cursor, country),
+        "total_navy_units": get_total_navy_units(cursor, country),
+        "coastal_provinces": get_coastal_province_count(cursor, country),
+        "land_military_upkeep": int(get_land_military_upkeep(cursor, country) * upkeep_mod),
+        "navy_military_upkeep": int(
+            get_navy_upkeep(cursor, country)
+            * get_country_modifier(cursor, country, "navy_upkeep_modifier")
+            * political_mods["military_upkeep_mod"]
+        ),
+    }
 
-        total_land_units = get_total_land_units(cursor, country)
-
-        # Get resource names for display
+    if verbose:
         cursor.execute("SELECT id, name FROM resources")
         resource_names = {row[0]: row[1] for row in cursor.fetchall()}
-
-        # Format resource production for display
         if production:
-            resource_lines = []
-            for resource_id, amount in sorted(production.items()):
-                resource_name = resource_names.get(resource_id, f"ID_{resource_id}")
-                resource_lines.append(f"{resource_name}: {amount}")
-            resource_display = ", ".join(resource_lines)
+            resource_display = ", ".join(
+                f"{resource_names.get(resource_id, f'ID_{resource_id}')}: {amount}"
+                for resource_id, amount in sorted(production.items())
+            )
         else:
             resource_display = "None"
 
         print(
             f"\n=== {country} DEBUG INFO ==="
             f"\nPopulation: {population:,} (provinces: {provinces})"
-            f"\nLand Units: {total_land_units:,}/{land_unit_limit:,}"
-            f"\nNavy Units: {total_navy_units:,}/{navy_cap:,} (coastal: {coastal_provinces})"
-            f"\nTax Income: {int(tax_income):,}"
-            f"\nBuilding Income: {int(building_income):,}"
+            f"\nLand Units: {result['total_land_units']:,}/{result['land_unit_cap']:,}"
+            f"\nNavy Units: {result['total_navy_units']:,}/{result['navy_unit_cap']:,} "
+            f"(coastal: {result['coastal_provinces']})"
+            f"\nTax Income: {result['tax_income']:,}"
+            f"\nBuilding Income: {result['building_income']:,}"
             f"\nTotal Income: {total_income:,}"
-            f"\nAdministration Cost: {int(administration_cost):,}"
-            f"\nLand Military Upkeep: {int(land_military_upkeep_final):,}"
-            f"\nNavy Military Upkeep: {int(navy_military_upkeep_final):,}"
-            f"\nBuilding Upkeep: {int(building_upkeep):,}"
+            f"\nAdministration Cost: {result['administration_cost']:,}"
+            f"\nLand Military Upkeep: {result['land_military_upkeep']:,}"
+            f"\nNavy Military Upkeep: {result['navy_military_upkeep']:,}"
+            f"\nBuilding Upkeep: {result['building_upkeep']:,}"
             f"\nTotal Expenses: {total_expenses:,}"
-            f"\nTreasury: {treasury:,} → {new_treasury:,}"
+            f"\nTreasury: {treasury:,}"
             f"\nResource Cap: {resource_cap:,} | Total Stockpile: {stockpile_total:,}"
             f"\nResource Production: {resource_display}"
-            f"\n--------------------------------------------------")
+            f"\n--------------------------------------------------"
+        )
 
+    return result
+
+
+def refresh_all_country_economies(cursor, seed_resource_stockpiles=False, verbose=False):
+    validate_schema(cursor)
+    ensure_country_resource_rows(cursor)
+    cursor.execute("SELECT code FROM countries ORDER BY code")
+    countries = [row[0] for row in cursor.fetchall()]
+    return [
+        result
+        for result in (
+            refresh_country_economy(cursor, country, seed_resource_stockpiles=seed_resource_stockpiles, verbose=verbose)
+            for country in countries
+        )
+        if result is not None
+    ]
+
+
+def import_economy_snapshot(cursor):
+    print("\n=== IMPORT ECONOMY START ===")
+    refresh_all_country_economies(cursor, seed_resource_stockpiles=True, verbose=True)
     print("✅ IMPORT ECONOMY COMPLETE")
 
 
