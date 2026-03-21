@@ -2,7 +2,7 @@
 
 `tgsimdb` is an acronym that stands for Telegram Simulation Database. Telegram Simulations (or "SIMs" for short) are text-based turn-based strategy RP games where you take control of an historical nation or state in a given time period, interacting and competing with other players for global domination. Like any other RP game each player starts with a "File" in which they can find all the relevant data that they need in order to play. As the game progresses and players make their moves, that data needs to be constantly updated and player files need to be rewritten each week. That work is usually done manually by the admins/masters of the RPs with the use of text files or excel spreadsheets. This project aims at creating a universal database made with the use of Python and SQLite to manage and automatically update, print and share player files.
 
-This project is in the earliest stages of development. Current version is v.1.3.1
+This project is in the earliest stages of development. Current version is v.1.3.2
 
 ## Table of Contents
 1. [Project Overview](#project-overview)
@@ -37,11 +37,11 @@ moves/
   Diadochi 322 AC Partita 1/
     player_moves_turn_1.csv
 ```
-As of now, new scenarios must use the hard coded keys used by economy_tick.py and import_moves.py. In a future update this issue will be addressed to make the project 100% compatible with any scenario that follows the data structure.
+As of now, new scenarios must still use the hard coded keys expected by the economy and modifier systems, especially in `economy_tick.py`. In a future update this will be generalized further so any scenario that follows the table structure can work without matching those specific keys.
 
 ### Core Data Files
 - **countries.csv**: Defines all countries in the game
-  - Fields: code, name, capital, culture, culture_group, religion, government, stability, unrest, corruption, at_war, war_exhaustion
+  - Fields: code, name, capital, culture, religion, government, stability, unrest, corruption, at_war, war_exhaustion
 - **provinces.csv**: Defines all provinces in the game
   - Fields: id, name, population, owner_country_code, rank, religion, culture, terrain, is_naval, resource_id
 - **resources.csv**: Defines all resources in the game
@@ -111,13 +111,14 @@ The import process is handled by several scripts that work together to populate 
 ### Export Scripts
 - **export_en.py**: Exports country information in English
   - Usage: `python export_en.py <country_code>`
-  - Creates files/ROM 12-03-2026 16-41.txt
+  - Creates `files/ROM 12-03-2026 16-41 EN.txt`
 - **export_it.py**: Exports country information in Italian
   - Usage: `python export_it.py <country_code>`
-  - Creates files/ROM 12-03-2026 16-49.txt.txt`
+  - Creates `files/ROM 12-03-2026 16-49 IT.txt`
 
 ### Utility Scripts
 - **balance_report.py**: Generates economic balance reports
+  - Usage: `python balance_report.py [--scenario "Scenario Name"]`
 - **admin_tools.py**: Applies admin/event changes safely and logs them to `event_log`
 - **db_utils.py**: Database connection utilities
 
@@ -127,7 +128,7 @@ The import process is handled by several scripts that work together to populate 
 
 ### Supported Commands
 - `python admin_tools.py set-basic <country_code> <field> <value>`
-  - Allowed fields: `capital`, `government`, `culture`, `culture_group`, `religion`
+  - Allowed fields: `capital`, `government`, `culture`, `religion`
 - `python admin_tools.py set-political <country_code> <field> <value>`
   - Allowed fields: `stability`, `unrest`, `corruption`, `war_exhaustion`, `at_war`
 - `python admin_tools.py add-treasury <country_code> <amount>`
@@ -190,6 +191,15 @@ python economy_tick.py
 # Export player files
 python export_en.py ROM
 python export_it.py ROM
+```
+
+### Running a Balance Check
+```bash
+# Run against the current DB
+python balance_report.py --ticks 10
+
+# Rebuild from a specific scenario first
+python balance_report.py --fresh --scenario "Diadochi 322 AC" --ticks 10
 ```
 
 ### Exporting Player Information

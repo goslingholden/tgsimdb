@@ -1,5 +1,5 @@
 name,population,owner_country_code,rank,religion,culture,terrain,is_naval,resource
-Trapani,95000,CAR,city,Punica,Cartaginesi,plains,1,stone
+Trapani,95000,CAR,city,Cananea,Cartaginesi,plains,1,stone
 Palermo,70000,CAR,city,Italica,Sicani,hills,1,grain
 Milazzo,22000,CAR,settlement,Italica,Sicani,mountains,1,wine
 Messina,53000,SIR,city,Ellenica,Sicelioti,hills,1,base_metals
@@ -7,7 +7,7 @@ Catania,42000,SIR,city,Ellenica,Sicelioti,plains,1,glass
 Caltanissetta,62000,CAR,city,Ellenica,Sicelioti,plains,1,horses
 Gela,34000,CAR,city,Ellenica,Sicelioti,forest,1,wood
 Siracusa,45000,SIR,city,Ellenica,Sicelioti,plains,1,wine
-Malta,3000,CAR,settlement,Punica,Cartaginesi,desert,1,grain
+Malta,3000,CAR,settlement,Cananea,Cartaginesi,desert,1,grain
 Reggio Calabria,40000,MAG,city,Ellenica,Italioti,hills,1,earthenware
 Vibo Valentia,30000,BRU,city,Italica,Bruzi,hills,1,wood
 Crotone,33000,MAG,city,Ellenica,Italioti,farmland,1,earthenware
@@ -35,7 +35,7 @@ Lavinio,57000,ROM,city,Ellenica,Romani,farmland,1,wood
 Roma,126000,ROM,city,Italica,Romani,farmland,1,iron
 Veio,77000,ROM,city,Ellenica,Romani,hills,1,iron
 Carbonia,42000,CAR,city,Nuragica,Sardi,plains,1,precious_metals
-Cagliari,60000,CAR,city,Punica,Cartaginesi,farmland,1,iron
+Cagliari,60000,CAR,city,Cananea,Cartaginesi,farmland,1,iron
 Oristano,54000,CAR,city,Nuragica,Sardi,mountains,1,wood
 Tortoli,32000,CAR,settlement,Nuragica,Sardi,hills,1,base_metals
 Sassari,28000,CAR,settlement,Nuragica,Sardi,farmland,1,grain
@@ -208,3 +208,23 @@ Trimammio,31000,TRA,settlement,Zalmoxiana,Crobizi,forest,0,wood
 Dionisopoli,32000,TRA,settlement,Zalmoxiana,Crobizi,forest,1,livestock
 Kallatis,36000,TRA,city,Ellenica,Bosfori,plains,1,leather
 Histria,45000,TRA,city,Zalmoxiana,Geti,marsh,1,grain
+Calcedonia,47000,BIT,city,Ellenica,Bitini,plains,1,cloth
+Artanes,45000,BIT,city,Ellenica,Bitini,hills,1,grain
+Eracleia,51000,BIT,city,Ellenica,Bitini,hills,1,salt
+Amasra,52000,BIT,city,Ellenica,Pontici,hills,1,olives
+Troia,173000,ELL,city,Ellenica,Egei,mountains,1,iron
+Zelea,142000,ELL,city,Anatolica,Misii,farmland,1,marble
+Nicea,97000,ELL,city,Ellenica,Propontici,hills,1,cloth
+Cadi,67000,ELL,settlement,Anatolica,Frigi,hills,0,wine
+Dorileo,48000,ELL,settlement,Anatolica,Frigi,forest,0,livestock
+Ankara,113000,ELL,city,Anatolica,Frigi,plains,0,wood
+Chios,52000,LID,city,Ellenica,Egei,mountains,1,wine
+Smirne,49000,LID,city,Ellenica,Ionici,hills,1,stone
+Pergamo,60000,LID,city,Anatolica,Misii,forest,1,glass
+Sardi,52000,LID,settlement,Anatolica,Lidi,plains,0,base_metals
+Acmonia,36000,LID,settlement,Anatolica,Frigi,forest,0,precious_metals
+Efeso,80000,CRI,city,Ellenica,Ionici,hills,1,iron
+Alicarnasso,123000,CRI,city,Ellenica,Cari,hills,1,earthenware
+Rodi,95000,CRI,city,Ellenica,Egei,hills,1,dyes
+Alabanda,57000,CRI,settlement,Ellenica,Cari,hills,0,olives
+Dioshieron,65000,CRI,settlement,Anatolica,Lici,hills,0,wood

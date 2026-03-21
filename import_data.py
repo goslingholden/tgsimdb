@@ -78,15 +78,14 @@ def import_countries(cursor, data_dir):
         reader = csv.DictReader(f)
         for row in reader:
             cursor.execute("""
-                INSERT INTO countries (code, name, capital, culture, 
-                    culture_group, religion, government, stability, 
+                INSERT INTO countries (code, name, capital, culture,
+                    religion, government, stability,
                     unrest, corruption, at_war, war_exhaustion)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(code) DO UPDATE SET
                     name = excluded.name,
                     capital = excluded.capital,
                     culture = excluded.culture,
-                    culture_group = excluded.culture_group,
                     religion = excluded.religion,
                     government = excluded.government,
                     stability = excluded.stability,
@@ -99,7 +98,6 @@ def import_countries(cursor, data_dir):
                 row["name"],
                 row.get("capital", "Unknown"),
                 row.get("culture", "Unknown"),
-                row.get("culture_group", "Unknown"),
                 row.get("religion", "Unknown"),
                 row.get("government", "Unknown"),
                 int(row.get("stability", 50)),

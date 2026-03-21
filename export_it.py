@@ -131,10 +131,11 @@ def get_country_info(conn, country_code):
     
     # Ottieni informazioni di base sul paese
     cursor.execute("""
-        SELECT code, name, capital, culture, culture_group, religion,
+        SELECT c.code, c.name, c.capital, c.culture, COALESCE(cc.culture_group, c.culture), c.religion,
                government, stability, unrest, corruption, at_war, war_exhaustion
-        FROM countries
-        WHERE code = ?
+        FROM countries c
+        LEFT JOIN cultures cc ON c.culture = cc.culture
+        WHERE c.code = ?
     """, (country_code,))
     
     country = cursor.fetchone()

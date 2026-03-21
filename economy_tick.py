@@ -392,11 +392,12 @@ def get_country_owned_provinces(cursor, country):
             COALESCE(pc.culture_group, p.culture),
             p.religion,
             c.culture,
-            c.culture_group,
+            COALESCE(cc.culture_group, c.culture),
             c.religion
         FROM provinces p
         JOIN countries c ON p.owner_country_code = c.code
         LEFT JOIN cultures pc ON p.culture = pc.culture
+        LEFT JOIN cultures cc ON c.culture = cc.culture
         WHERE p.owner_country_code = ?
     """, (country,))
     return cursor.fetchall()

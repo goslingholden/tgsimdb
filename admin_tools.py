@@ -1,31 +1,13 @@
 #!/usr/bin/env python3
 
 import argparse
-from db_utils import get_connection
+from db_utils import ensure_event_log_table, get_connection
 from economy_tick import FOOD_RESOURCE_NAMES, ensure_country_resource_rows
 from import_data import refresh_all_country_economies, refresh_country_economy, validate_schema
 
 
-BASIC_FIELDS = {"capital", "government", "culture", "culture_group", "religion"}
+BASIC_FIELDS = {"capital", "government", "culture", "religion"}
 POLITICAL_FIELDS = {"stability", "unrest", "corruption", "war_exhaustion", "at_war"}
-
-
-def ensure_event_log_table(cursor):
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS event_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            executed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            command_name TEXT NOT NULL,
-            target_table TEXT NOT NULL,
-            target_key TEXT NOT NULL,
-            field_name TEXT NOT NULL,
-            old_value TEXT,
-            new_value TEXT,
-            delta_value REAL,
-            notes TEXT
-        )
-    """)
-
 
 def fetch_row_dict(cursor, query, params=()):
     cursor.execute(query, params)
@@ -214,22 +196,6 @@ def set_basic(cursor, args):
     new_value = args.value
     cursor.execute(f"UPDATE countries SET {args.field} = ? WHERE code = ?", (new_value, args.country_code))
     log_change(cursor, "set_basic", "countries", args.country_code, args.field, old_value, new_value)
-
-    if args.field == "culture":
-        current_group = fetch_value(cursor, "SELECT culture_group FROM countries WHERE code = ?", (args.country_code,))
-        synced_group = fetch_value(cursor, "SELECT culture_group FROM cultures WHERE culture = ?", (new_value,))
-        if synced_group and synced_group != current_group:
-            cursor.execute("UPDATE countries SET culture_group = ? WHERE code = ?", (synced_group, args.country_code))
-            log_change(
-                cursor,
-                "set_basic",
-                "countries",
-                args.country_code,
-                "culture_group",
-                current_group,
-                synced_group,
-                "Auto-synced from cultures table",
-            )
 
     refresh_country_and_log(cursor, args.country_code, "set_basic", notes=f"Triggered by change to {args.field}")
 

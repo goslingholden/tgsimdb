@@ -1,4 +1,4 @@
-from db_utils import get_connection
+from db_utils import ensure_event_log_table, get_connection
 
 conn = get_connection()
 cursor = conn.cursor()
@@ -12,7 +12,6 @@ CREATE TABLE IF NOT EXISTS countries (
     name TEXT UNIQUE NOT NULL,
     capital TEXT NOT NULL DEFAULT 'Unknown',
     culture TEXT NOT NULL DEFAULT 'Unknown',
-    culture_group TEXT NOT NULL DEFAULT 'Unknown',
     religion TEXT NOT NULL DEFAULT 'Unknown',
     government TEXT NOT NULL DEFAULT 'Unknown',
     stability INTEGER NOT NULL DEFAULT 50,
@@ -263,20 +262,7 @@ print("Player moves table created successfully.")
 
 
 print("Creating event log table...")
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS event_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    executed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    command_name TEXT NOT NULL,
-    target_table TEXT NOT NULL,
-    target_key TEXT NOT NULL,
-    field_name TEXT NOT NULL,
-    old_value TEXT,
-    new_value TEXT,
-    delta_value REAL,
-    notes TEXT
-);
-""")
+ensure_event_log_table(cursor)
 print("Event log table created successfully.")
 
 

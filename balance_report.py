@@ -29,11 +29,14 @@ def wipe_database():
     conn.close()
 
 
-def reset_world():
+def reset_world(scenario_subfolder=None):
     print("Resetting world state from CSV data...")
     wipe_database()
     run_command(["python3", "setup_db.py"])
-    run_command(["python3", "import_data.py"])
+    import_cmd = ["python3", "import_data.py"]
+    if scenario_subfolder:
+        import_cmd.append(scenario_subfolder)
+    run_command(import_cmd)
 
 
 def load_snapshot():
@@ -162,9 +165,9 @@ def print_summary(stats, ticks):
     print(f"- Countries with avg unrest increase > 1.5/tick: {', '.join(unrest_spike) if unrest_spike else 'none'}")
 
 
-def run_report(ticks, fresh, verbose_ticks):
+def run_report(ticks, fresh, verbose_ticks, scenario_subfolder):
     if fresh:
-        reset_world()
+        reset_world(scenario_subfolder)
 
     before = load_snapshot()
     if not before:
@@ -189,6 +192,10 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run multiple economy ticks and print balance trends.")
     parser.add_argument("--ticks", type=int, default=10, help="Number of economy ticks to simulate (default: 10)")
     parser.add_argument(
+        "--scenario",
+        help="Optional data subfolder to use with --fresh, for example 'Diadochi 322 AC'",
+    )
+    parser.add_argument(
         "--fresh",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -209,7 +216,7 @@ def main():
         sys.exit(1)
 
     try:
-        run_report(args.ticks, args.fresh, args.verbose_ticks)
+        run_report(args.ticks, args.fresh, args.verbose_ticks, args.scenario)
     except Exception as exc:
         print(f"❌ Balance report failed: {exc}")
         sys.exit(1)

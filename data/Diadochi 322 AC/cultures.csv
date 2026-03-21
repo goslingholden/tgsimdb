@@ -1,4 +1,8 @@
 culture,culture_group
+Frigi,Anatolici
+Lici,Anatolici
+Lidi,Anatolici
+Misii,Anatolici
 Albocensi,Daci
 Buridavi,Daci
 Carpi,Daci
@@ -7,14 +11,17 @@ Ratacensi,Daci
 Achei,Ellenici
 Ateniesi,Ellenici
 Bosfori,Ellenici
+Cari,Ellenici
 Cretesi,Ellenici
 Egei,Ellenici
 Epirioti,Ellenici
 Etoli,Ellenici
 Eubei,Ellenici
+Ionici,Ellenici
 Italioti,Ellenici
 Lacedemoni,Ellenici
 Macedoni,Ellenici
+Pontici,Ellenici
 Propontici,Ellenici
 Sicelioti,Ellenici
 Tessali,Ellenici
@@ -58,6 +65,7 @@ Veneti,Italici
 Cartaginesi,Levantini
 Corsi,Nuragici
 Sardi,Nuragici
+Bitini,Traci
 Crobizi,Traci
 Odrisi,Traci
 Triballi,Traci

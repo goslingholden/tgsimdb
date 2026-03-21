@@ -2,8 +2,8 @@
 """
 Export all information about a country to a human-readable text file.
 
-Usage: python export.py <country_code>
-Example: python export.py ROM
+Usage: python export_en.py <country_code>
+Example: python export_en.py ROM
 """
 
 import sys
@@ -49,10 +49,11 @@ def get_country_info(conn, country_code):
     
     # Get basic country info
     cursor.execute("""
-        SELECT code, name, capital, culture, culture_group, religion,
+        SELECT c.code, c.name, c.capital, c.culture, COALESCE(cc.culture_group, c.culture), c.religion,
                government, stability, unrest, corruption, at_war, war_exhaustion
-        FROM countries
-        WHERE code = ?
+        FROM countries c
+        LEFT JOIN cultures cc ON c.culture = cc.culture
+        WHERE c.code = ?
     """, (country_code,))
     
     country = cursor.fetchone()
@@ -344,8 +345,8 @@ def generate_report(country_data):
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python export.py <country_code>")
-        print("Example: python export.py ROM")
+        print("Usage: python export_en.py <country_code>")
+        print("Example: python export_en.py ROM")
         sys.exit(1)
     
     country_code = sys.argv[1].upper()
