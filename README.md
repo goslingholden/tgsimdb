@@ -37,6 +37,7 @@ moves/
   Diadochi 322 AC Partita 1/
     player_moves_turn_1.csv
 ```
+As of now, new scenarios must use the hard coded keys used by economy_tick.py and import_moves.py. In a future update this issue will be addressed to make the project 100% compatible with any scenario that follows the data structure.
 
 ### Core Data Files
 - **countries.csv**: Defines all countries in the game
