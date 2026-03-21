@@ -227,7 +227,7 @@ python admin_tools.py refresh-all
 Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
 
 ## License
-This project is open source and available under the MIT License.
+This project is open source and available under the GPL v3 License.
 
 ## Support
 For support and questions, please refer to the project documentation or create an issue in the repository.
